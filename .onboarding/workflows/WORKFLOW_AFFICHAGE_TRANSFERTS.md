@@ -58,5 +58,5 @@ Permettre à un utilisateur d'accéder, dès l'ouverture de la page, à la liste
 
 ## Preuves
 - `js/app.js` — ouvert en entier (20 lignes) : déclaration de `API_BASE_URL` (lignes 2–3), fonction `loadTransfers` (lignes 5–16), `fetch` (ligne 6), `response.json()` (ligne 7), `getElementById` (ligne 9), `innerHTML = ""` (ligne 10), boucle `for...of` (lignes 11–15), `item.textContent` (ligne 13), garde `if (typeof document !== "undefined")` (ligne 18), `addEventListener("DOMContentLoaded", loadTransfers)` (ligne 19)
-- `index.html` — ouvert en entier (12 lignes) : `<h1>Transferts</h1>` (ligne 7), `<ul id="transfers-list">` (ligne 9), `<script src="js/app.js">` (ligne 10)
+- `index.html` — ouvert en entier (12 lignes) : `<h1>Transferts</h1>` (ligne 8), `<ul id="transfers-list">` (ligne 9), `<script src="js/app.js">` (ligne 10)
 - `README.md` — ouvert en entier (8 lignes) : *« Consomme `shift-pilot-resa-api` (même projet, dépôt séparé) »*, stack *« HTML + JS natif, aucune dépendance, aucun build »*
