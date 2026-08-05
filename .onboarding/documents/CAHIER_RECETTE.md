@@ -56,7 +56,7 @@ Ce cahier de recette couvre l'**unique fonctionnalité** de ce workspace : affic
 | 2 | La `<ul id="transfers-list">` contient au moins une `<li>` | Une `<li>` par transfert |
 | 3 | Chaque `<li>` affiche le format attendu | `[origine] → [destination] — [prix] XPF ([places] places)` |
 | 4 | Les valeurs affichées correspondent aux données de l'API | Pas de corruption de données |
-| 5 | L'affichage est instantané (sans blocage) | < 100ms en local pour un catalogue de 10–50 transferts |
+| 5 | L'affichage est instantané (sans blocage) | [HYPOTHÈSE] < 100ms en local pour un catalogue de 10–50 transferts — non mesuré, non tracé dans les audits |
 
 **Exemple de `<li>` attendue**
 ```
