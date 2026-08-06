@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadTransfers, reserve, cancelReservation, reservations } from './app.js';
+import { loadTransfers, reserve, cancelReservation, reservations, pendingTransfers } from './app.js';
 
 function makeDOM() {
   const items = [];
@@ -241,5 +241,70 @@ test('cancelReservation affiche une erreur si l\'API répond 404', async () => {
   assert.ok(err !== null, "Aucun message d'erreur affiché");
   assert.ok(err.includes('404'), `Le message d'erreur ne mentionne pas le code : "${err}"`);
   assert.ok(reservations.has(1), 'reservationId supprimé malgré l\'erreur');
+  reservations.clear();
+});
+
+// --- Tests anti double-clic ---
+
+test('reserve ignore un second appel si une opération est déjà en cours pour ce transfert', async () => {
+  const { doc } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  pendingTransfers.clear();
+  pendingTransfers.add(1); // simule une opération en cours
+
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    return { ok: true, json: async () => ({ reservationId: 'uuid-1' }) };
+  };
+
+  await reserve(1);
+
+  assert.equal(fetchCalled, false, 'fetch appelé malgré une opération en cours');
+  assert.ok(!reservations.has(1), 'reservationId stocké malgré une opération en cours');
+  pendingTransfers.clear();
+  reservations.clear();
+});
+
+test('reserve ignore un appel si le transfert est déjà réservé dans reservations', async () => {
+  const { doc } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  pendingTransfers.clear();
+  reservations.set(1, 'uuid-existant');
+
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    return { ok: true, json: async () => ({ reservationId: 'uuid-nouveau' }) };
+  };
+
+  await reserve(1);
+
+  assert.equal(fetchCalled, false, 'fetch appelé malgré une réservation déjà active');
+  assert.equal(reservations.get(1), 'uuid-existant', 'reservationId écrasé par un appel ignoré');
+  reservations.clear();
+});
+
+test('cancelReservation ignore un second appel si une opération est déjà en cours pour ce transfert', async () => {
+  const { doc } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  pendingTransfers.clear();
+  reservations.set(1, 'uuid-1');
+  pendingTransfers.add(1); // simule une opération en cours
+
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    return { ok: true, json: async () => ({}) };
+  };
+
+  await cancelReservation(1, 'uuid-1');
+
+  assert.equal(fetchCalled, false, 'fetch appelé malgré une opération en cours');
+  assert.ok(reservations.has(1), 'reservationId supprimé malgré une opération en cours');
+  pendingTransfers.clear();
   reservations.clear();
 });
