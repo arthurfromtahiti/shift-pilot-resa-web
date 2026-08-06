@@ -32,7 +32,7 @@ shift-pilot-resa-web/
 **Sortie** : liste HTML de transferts avec boutons d'action, état des réservations  
 **Logique principale**
 ```javascript
-// js/app.js, lignes 8–39
+// js/app.js, lignes 8–40
 export async function loadTransfers() {
   const list = document.getElementById("transfers-list");
   try {
@@ -73,7 +73,7 @@ export async function loadTransfers() {
 - `cancelReservation(transferId, reservationId)` (lignes 61–76) : DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
 
 **Points d'attention**
-- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 10–40)
+- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 10–39)
 - État client `reservations` (Map) n'est pas persisté — oublié au rechargement de page
 - Pas de validation des champs `id`, `from`, `to`, `price`, `seatsLeft` — un absent → `undefined` affiché
 - Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert
@@ -236,7 +236,7 @@ item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} pla
 
 **Priorité** : **Moyenne** — fragile à l'évolution de l'API, mais actuellement en phase.
 
-### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 37–38)
+### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 37–39)
 
 ```javascript
 } catch (err) {
