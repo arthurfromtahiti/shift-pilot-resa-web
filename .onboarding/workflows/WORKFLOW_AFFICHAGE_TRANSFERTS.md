@@ -19,24 +19,24 @@ Permettre à un utilisateur d'accéder, dès l'ouverture de la page, à la liste
 
 ## Points d'entrée
 - Chargement de `index.html` dans le navigateur (`<script src="js/app.js">`, `index.html` ligne 10)
-- Événement `DOMContentLoaded` → déclenche `loadTransfers()` (`js/app.js`, ligne 19), conditionnel à la garde `if (typeof document !== "undefined")` (ligne 18)
+- Événement `DOMContentLoaded` → déclenche `loadTransfers()` (`js/app.js`, ligne 79), conditionnel à la garde `if (typeof document !== "undefined")` (ligne 78)
 
 ## Étapes principales
 1. **Résolution de l'URL de base** : au chargement du script, `API_BASE_URL` est résolu : `(typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100"` (`js/app.js`, lignes 2–3) — la garde `typeof window` assure la compatibilité hors navigateur avant d'accéder à la propriété. Aucune validation de l'URL n'est effectuée.
-2. **Attente du DOM prêt** : sous la garde `if (typeof document !== "undefined")` (`js/app.js`, ligne 75), `document.addEventListener("DOMContentLoaded", loadTransfers)` (ligne 76) — `loadTransfers` ne s'exécute qu'une fois le DOM entièrement parsé par le navigateur.
+2. **Attente du DOM prêt** : sous la garde `if (typeof document !== "undefined")` (`js/app.js`, ligne 78), `document.addEventListener("DOMContentLoaded", loadTransfers)` (ligne 79) — `loadTransfers` ne s'exécute qu'une fois le DOM entièrement parsé par le navigateur.
 3. **Appel HTTP GET vers l'API** : `fetch(\`${API_BASE_URL}/transfers\`)` (`js/app.js`, ligne 11) — requête GET vers `/transfers`, sans en-tête d'authentification ni paramètre.
 4. **Gestion des erreurs** : vérification de `response.ok` (`js/app.js`, ligne 12–13) et bloc `try/catch` (`js/app.js`, lignes 10–37) qui captent les erreurs réseau et mettent à jour le DOM avec un message d'erreur.
 5. **Désérialisation JSON** : `await response.json()` (`js/app.js`, ligne 14) — la réponse est traitée comme du JSON.
 6. **Vidage du conteneur** : `list.innerHTML = ""` (`js/app.js`, ligne 16) — la liste `<ul>` est réinitialisée avant le rendu, évitant les doublons si la fonction est rappelée.
-7. **Rendu de chaque transfert avec boutons d'action** : boucle `for (const t of transfers)` (`js/app.js`, lignes 17–33) — pour chaque objet `t`, création d'un `<li>` avec le texte `` `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)` `` (`js/app.js`, ligne 19). Puis :
-   - Vérifier si l'utilisateur a déjà une réservation pour ce transfert via `reservations.get(t.id)` (`js/app.js`, ligne 21)
-   - Si oui : ajouter un bouton « Annuler » qui appelle `cancelReservation(t.id, reservationId)` (`js/app.js`, lignes 22–27)
+7. **Rendu de chaque transfert avec boutons d'action** : boucle `for (const t of transfers)` (`js/app.js`, lignes 18–36) — pour chaque objet `t`, création d'un `<li>` avec le texte `` `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)` `` (`js/app.js`, ligne 20). Puis :
+   - Vérifier si l'utilisateur a déjà une réservation pour ce transfert via `reservations.get(t.id)` (`js/app.js`, ligne 22)
+   - Si oui : ajouter un bouton « Annuler » qui appelle `cancelReservation(t.id, reservationId)` (`js/app.js`, lignes 23–27)
    - Sinon, si des places restent (`t.seatsLeft > 0`) : ajouter un bouton « Réserver » qui appelle `reserve(t.id)` (`js/app.js`, lignes 28–32)
-   - Ajouter le `<li>` à `<ul id="transfers-list">` (`js/app.js`, ligne 34)
+   - Ajouter le `<li>` à `<ul id="transfers-list">` (`js/app.js`, ligne 35)
 
 ## Règles métier
-- **Affichage automatique** : `loadTransfers` est liée à `DOMContentLoaded` (`js/app.js`, ligne 76) — l'appel initial est automatique.
-- **Rafraîchissement après action** : après chaque réservation ou annulation, `loadTransfers()` est appelée pour redessiner la liste (`js/app.js`, lignes 53 et 72).
+- **Affichage automatique** : `loadTransfers` est liée à `DOMContentLoaded` (`js/app.js`, ligne 79) — l'appel initial est automatique.
+- **Rafraîchissement après action** : après chaque réservation ou annulation, `loadTransfers()` est appelée pour redessiner la liste (`js/app.js`, lignes 55 et 72).
 - **L'unité monétaire est XPF** : codée en dur dans le template de `item.textContent` (`js/app.js`, ligne 19) — non configurable, non localisable.
 - **Cinq champs requis par l'affichage** : `id`, `from`, `to`, `price`, `seatsLeft` — tous lus directement sur l'objet `t` sans validation ni valeur par défaut. Un champ absent produit `undefined` affiché tel quel (pour les champs de texte) ou erreur (pour `id` dans `reservations.get(t.id)`).
 - **État persistant client** : `reservations` est une `Map` (`js/app.js`, ligne 6) qui stocke les réservations actives de l'utilisateur (clé : `transferId`, valeur : `reservationId`) — utilisée pour afficher le bouton « Annuler » au lieu de « Réserver ».
@@ -45,15 +45,15 @@ Permettre à un utilisateur d'accéder, dès l'ouverture de la page, à la liste
 
 ## Données
 - **`transfers`** (tableau, ressource distante) : champs **consommés** : `id` (identifiant du transfert), `from` (origine), `to` (destination), `price` (prix), `seatsLeft` (places restantes) — `VÉRIFIÉ_CODE` pour l'usage de ces champs dans `js/app.js` (lignes 19–22). La forme complète renvoyée par l'API est `INCONNU` : aucun schéma d'API dans ce dépôt.
-- **`reservations`** (Map client) : stocke les réservations de l'utilisateur — clé : `transferId` (chaîne ou nombre), valeur : `reservationId` (chaîne ou nombre renvoyée par l'API) (`js/app.js`, lignes 6, 52, 71). Utilisée pour afficher le bon bouton (« Annuler » si réservé, « Réserver » sinon).
+- **`reservations`** (Map client) : stocke les réservations de l'utilisateur — clé : `transferId` (chaîne ou nombre), valeur : `reservationId` (chaîne ou nombre renvoyée par l'API) (`js/app.js`, lignes 6, 54, 71). Utilisée pour afficher le bon bouton (« Annuler » si réservé, « Réserver » sinon).
 - **`API_BASE_URL`** (chaîne) : URL de base résolue au chargement du script — `(typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100"` (`js/app.js`, lignes 2–3). Mécanisme d'injection en environnement non-local non visible dans ce dépôt.
 - **`transfers-list`** (élément DOM) : conteneur `<ul id="transfers-list">` (`index.html`, ligne 9) — cible de rendu unique, et zone d'affichage des messages d'erreur.
 
 ## Intégrations
 - **`shift-pilot-resa-api`** (API distante) :
   - `GET /transfers` (`js/app.js`, ligne 11) → tableau de transferts avec champs `id`, `from`, `to`, `price`, `seatsLeft`
-  - `POST /transfers/{transferId}/reserve` (`js/app.js`, lignes 45–49) → réserve une place, body : `{ seats: 1 }`, réponse : `{ reservationId }` 
-  - `DELETE /transfers/{transferId}/reservations/{reservationId}` (`js/app.js`, lignes 65–67) → annule une réservation existante, aucun body
+  - `POST /transfers/{transferId}/reserve` (`js/app.js`, lignes 45–49) → réserve une place, body : `{ seats: 1 }`, réponse : JSON contenant `reservationId`
+  - `DELETE /transfers/{transferId}/reservations/{reservationId}` (`js/app.js`, lignes 64–67) → annule une réservation existante, aucun body
   - Découverte via `README.md` (*« Consomme `shift-pilot-resa-api` (même projet, dépôt séparé) »*) et le commentaire de tête de `js/app.js` (ligne 1).
 
 ## Risques
@@ -71,13 +71,13 @@ Permettre à un utilisateur d'accéder, dès l'ouverture de la page, à la liste
 - **Persistance des réservations après rechargement** : `reservations` (Map) est vide au rechargement de page. Si l'API maintient des réservations côté serveur (scénario probable), l'UI ne les affiche pas au rechargement. Doit-on réconcilier `reservations` avec l'état API après chaque `loadTransfers` ?
 
 ## Preuves
-- `js/app.js` — ouvert en entier (80 lignes) : 
+- `js/app.js` — ouvert en entier (81 lignes) : 
   - déclaration de `API_BASE_URL` (lignes 2–3)
   - export de `reservations` Map (ligne 6)
-  - fonction `loadTransfers` (lignes 8–39) avec `try/catch`, vérification `response.ok`, affichage des boutons d'action
-  - fonction `reserve` (lignes 42–57) avec `POST /transfers/{id}/reserve`
-  - fonction `cancelReservation` (lignes 60–73) avec `DELETE /transfers/{id}/reservations/{id}`
+  - fonction `loadTransfers` (lignes 8–40) avec `try/catch`, vérification `response.ok`, affichage des boutons d'action
+  - fonction `reserve` (lignes 42–59) avec `POST /transfers/{id}/reserve`
+  - fonction `cancelReservation` (lignes 61–76) avec `DELETE /transfers/{id}/reservations/{id}`
   - `fetch`, `response.json()`, `getElementById`, `innerHTML = ""`, boucles, `item.textContent`
-  - garde `if (typeof document !== "undefined")` (ligne 77), `addEventListener("DOMContentLoaded", loadTransfers)` (ligne 78)
-- `index.html` — ouvert en entier (12 lignes) : `<h1>Transferts</h1>` (ligne 8), `<ul id="transfers-list">` (ligne 9), `<script src="js/app.js" type="module">` (ligne 10)
+  - garde `if (typeof document !== "undefined")` (ligne 78), `addEventListener("DOMContentLoaded", loadTransfers)` (ligne 79)
+- `index.html` — ouvert en entier (13 lignes) : `<h1>Transferts</h1>` (ligne 8), `<ul id="transfers-list">` (ligne 9), `<script type="module" src="js/app.js">` (ligne 10)
 - `README.md` — ouvert en entier : stack *« HTML + JS natif, aucune dépendance, aucun build »*, mention de `shift-pilot-resa-api`

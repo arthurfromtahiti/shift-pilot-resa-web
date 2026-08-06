@@ -69,11 +69,11 @@ export async function loadTransfers() {
 ```
 
 **Fonctions supplémentaires**
-- `reserve(transferId)` (lignes 42–57) : POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
-- `cancelReservation(transferId, reservationId)` (lignes 60–73) : DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
+- `reserve(transferId)` (lignes 42–59) : POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
+- `cancelReservation(transferId, reservationId)` (lignes 61–76) : DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
 
 **Points d'attention**
-- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 12–13, 22–37)
+- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 10–40)
 - État client `reservations` (Map) n'est pas persisté — oublié au rechargement de page
 - Pas de validation des champs `id`, `from`, `to`, `price`, `seatsLeft` — un absent → `undefined` affiché
 - Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert
@@ -114,7 +114,7 @@ const response = await fetch(`${API_BASE_URL}/transfers/${transferId}/reserve`, 
   body: JSON.stringify({ seats: 1 }),
 });
 
-// js/app.js, lignes 65–67 — DELETE /transfers/{id}/reservations/{id}
+// js/app.js, lignes 64–67 — DELETE /transfers/{id}/reservations/{id}
 const response = await fetch(
   `${API_BASE_URL}/transfers/${transferId}/reservations/${reservationId}`,
   { method: "DELETE" }
@@ -171,8 +171,8 @@ Réponse JSON est rendue dans le DOM
 ```
 
 **Fichier d'entrée** : `index.html` (ligne 10 : `<script src="js/app.js">`)  
-**Événement déclencheur** : `DOMContentLoaded` (js/app.js, ligne 19)  
-**Fonction déclenchée** : `loadTransfers()` (js/app.js, lignes 5–16)
+**Événement déclencheur** : `DOMContentLoaded` (js/app.js, ligne 79)  
+**Fonction déclenchée** : `loadTransfers()` (js/app.js, lignes 8–40)
 
 ### Secondaire — Rafraîchissement après action
 
@@ -214,11 +214,11 @@ La liste est automatiquement rafraîchie après chaque réservation ou annulatio
 
 ## Hotspots et zones critiques
 
-### Hotspot 1 — Couplage implicite avec le schéma API — champ `id` critique (`js/app.js`, lignes 21, 52, 71)
+### Hotspot 1 — Couplage implicite avec le schéma API — champ `id` critique (`js/app.js`, lignes 22, 54, 71)
 
 ```javascript
-const reservationId = reservations.get(t.id);  // ligne 21
-reservations.set(transferId, data.reservationId);  // ligne 52
+const reservationId = reservations.get(t.id);  // ligne 22
+reservations.set(transferId, data.reservationId);  // ligne 54
 reservations.delete(transferId);  // ligne 71
 ```
 
@@ -226,7 +226,7 @@ reservations.delete(transferId);  // ligne 71
 
 **Priorité** : **CRITIQUE** — le champ `id` doit exister, être unique et stable pour chaque transfert.
 
-### Hotspot 2 — Couplage implicite avec le schéma API — champs d'affichage (`js/app.js`, ligne 19)
+### Hotspot 2 — Couplage implicite avec le schéma API — champs d'affichage (`js/app.js`, ligne 20)
 
 ```javascript
 item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
@@ -236,7 +236,7 @@ item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} pla
 
 **Priorité** : **Moyenne** — fragile à l'évolution de l'API, mais actuellement en phase.
 
-### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 36–37)
+### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 37–38)
 
 ```javascript
 } catch (err) {
