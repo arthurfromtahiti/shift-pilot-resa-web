@@ -10,7 +10,7 @@ async function loadTransfers() {
   list.innerHTML = "";
   for (const t of transfers) {
     const item = document.createElement("li");
-    item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.availableSeats} places)`;
+    item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
     list.appendChild(item);
   }
 }
