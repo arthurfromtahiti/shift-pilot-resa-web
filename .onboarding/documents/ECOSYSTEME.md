@@ -1,178 +1,269 @@
-# ECOSYSTEME — Shift Pilot Resa
+# ECOSYSTEME — Shift Pilot Resa (API + Web)
 
-> **Confiance : medium** — API pleinement documentée (`shift-pilot-resa-api`) ; interface front lue entièrement (`shift-pilot-resa-web`) ; tensions sémantiques identifiées sur la division de responsabilités (réservation absente des deux côtés).
+> **Confiance** : medium
+
+---
 
 ## Workspaces couverts
 
-- **shift-pilot-resa-api** — API HTTP Node.js natif exposant un catalogue de transferts inter-îles (lecture seule), trois trajets codés en dur avec prix et places restantes
-- **shift-pilot-resa-web** — Interface web statique (HTML + JavaScript vanilla) affichant la liste des transferts en appelant l'API distante
+- **shift-pilot-resa-api** — Service HTTP backend, Node.js natif sans framework. Expose le catalogue de transferts inter-îles et gère les réservations en temps réel (données en mémoire, volatiles au redémarrage).
+- **shift-pilot-resa-web** — Interface web statique HTML/JS, aucune dépendance. Affiche le catalogue de transferts en interrogeant l'API. Consultation uniquement (réservation absent du code).
+
+---
 
 ## Dépendances entre workspaces
 
-### shift-pilot-resa-web → shift-pilot-resa-api
+### Web → API (consommation)
 
-**Ce qui est consommé** : un endpoint HTTP GET  
-**Endpoint** : `GET /transfers`  
-**Preuve dans le code** : 
-- `shift-pilot-resa-web/js/app.js:6` — appel `fetch(\`${API_BASE_URL}/transfers\`)`
-- `shift-pilot-resa-api/src/server.js:10-13` — implémentation de la route
+**Endpoint 1 : GET /transfers (consultation catalogue)**
+- **Consumé par** : `shift-pilot-resa-web/js/app.js`, fonction `loadTransfers()` (ligne 5–15)
+- **Contrat implicite** :
+  - Requête : GET sur `${window.API_BASE_URL}/transfers` (fallback `http://localhost:3100`)
+  - Réponse 200 : tableau JSON de transferts
+  - Champs attendus du frontend : `from`, `to`, `price`, `availableSeats`
+  - Champs réellement produits par l'API : `id`, `from`, `to`, `price`, `seatsLeft` (**DIVERGENCE : voir risques**)
+- **Implémentation API** : `shift-pilot-resa-api/src/server.js:10–20` (route GET /transfers)
+- **Usage** : rendu DOM pour chaque transfert (`<li>Papeete → Moorea — 3500 XPF (X places)</li>`)
 
-**Contrat API réel** (reconstruction depuis les deux côtés) :
+**Endpoint 2 : POST /transfers/:id/reserve (réservation)**
+- **Consumé par** : aucun (formulaire absent du frontend — statut TODO SHIAAAAAAAAAAAAAAAAAAAAAAAA-61)
+- **Contrat** :
+  - Requête : POST sur `${API_BASE_URL}/transfers/{id}/reserve` avec body JSON optionnel `{ seats: N }`
+  - Réponse 200 : `{ transferId: N, seatsLeft: X }`
+  - Erreur 404 : transfert inexistant
+  - Erreur 409 : plus de places disponibles
+- **Implémentation API** : `shift-pilot-resa-api/src/server.js:23–41` (route POST /transfers/:id/reserve)
+- **Usage** : réservation côté client une fois le formulaire ajouté au frontend
+- **État de maturité** : API fonctionnel, UI à implémenter
 
-```http
-GET /transfers
-Host: <API_BASE_URL>  # configurable, par défaut localhost:3100
-Content-Type: application/json
+---
 
-HTTP/1.1 200 OK
-Content-Type: application/json
+## Flux transverses (articulation métier)
 
-[
-  { "id": 1, "from": "Papeete", "to": "Moorea", "price": 3500, "seatsLeft": 28 },
-  { "id": 2, "from": "Papeete", "to": "Bora Bora", "price": 21000, "seatsLeft": 0 },
-  { "id": 3, "from": "Raiatea", "to": "Tahaa", "price": 1800, "seatsLeft": 15 }
-]
+### Flux 1 : Affichage du catalogue (parcours voyageur)
+
+**Séquence** :
+1. Voyageur ouvre la page web (`index.html`)
+2. Frontend (`js/app.js`) émet GET /transfers
+3. API retourne tableau de 3 transferts avec disponibilités (en mémoire)
+4. Frontend rendu catalogue dans la `<ul id="transfers-list">`
+5. Voyageur voit liste de transferts, prix, places libres
+
+**Points clés** :
+- Découplage complet : API ne connaît pas le frontend, frontend ignore les détails internes de l'API
+- Contrat API-client exprimé implicitement dans le code (`js/app.js:13` accède aux champs)
+- Dépendance réseau critique : si API injoignable → liste vide sans message d'erreur
+
+**Données partagées** :
+```
+Transfer {
+  id: 1..3,
+  from: "Papeete" | "Raiatea",
+  to: "Moorea" | "Bora Bora" | "Tahaa",
+  price: 1800 | 3500 | 21000 (XPF),
+  availableSeats: 0..28  // Attendu par frontend
+  seatsLeft: 0..28       // Produit par API (même sémantique; voir transfers.js:3-6 pour capacités réelles)
+}
 ```
 
-**Champs observés par le web** (`shift-pilot-resa-web/js/app.js:10-15`)) :
-- `from` (string) — origine
-- `to` (string) — destination  
-- `price` (number) — tarif en XPF
-- `availableSeats` (number) — places restantes
+### Flux 2 : Réservation de places (parcours voyageur — futur)
 
-**Champs fournis par l'API** (`shift-pilot-resa-api/src/server.js:14-20`) :
-- `id` (number) — identifiant du transfert
-- `from` (string) — origine
-- `to` (string) — destination
-- `price` (number) — tarif
-- `seatsLeft` (number) — places restantes
+**Séquence (potentielle, une fois formulaire implémenté)** :
+1. Voyageur remplit formulaire réservation (transfert ID + nombre de places)
+2. Frontend émet POST /transfers/{id}/reserve avec body `{ seats: N }`
+3. API valide disponibilité, décrémente compteur `sold` en mémoire
+4. API retourne 200 avec `{ transferId, seatsLeft }` (nouvelles places libres)
+5. Frontend affiche confirmation et optionnellement rafraîchit la liste
+6. Autres voyageurs doivent recharger manuellement la page — aucun mécanisme de rafraîchissement (polling, WebSocket) n'existe dans le code
 
-**Mismatch détecté** : le web attend `availableSeats`, l'API retourne `seatsLeft`. Quand le web accède `t.availableSeats`, la propriété manque et retourne `undefined` — l'affichage produit systématiquement `(undefined places)`. C'est un **bug actif**, non une coïncidence heureuse.
+**Invariant métier** :
+- Places vendues + places libres = capacité totale (stockée comme `seatsLeft = seats - sold`)
+- Aucune réservation si places libres insuffisantes (garde dans `bookSeats()`, `src/transfers.js:24`)
 
----
-
-## Flux transversaux
-
-### Consultation du catalogue de transferts
-
-**Acteur** : Utilisateur final  
-**Déclencheur** : Chargement de la page `shift-pilot-resa-web/index.html`  
-**Type** : API GET (lecture seule)  
-**Criticité** : Haute — c'est l'unique fonction métier du système en état pilote
-
-#### Déroulement
-
-1. **Chargement du navigateur** : l'utilisateur ouvre `index.html` ; le navigateur exécute `js/app.js`
-2. **Résolution d'endpoint** : l'URL de l'API est résolue :
-   - Priorité : valeur injectée dans `window.API_BASE_URL` (définie par l'environnement hôte)
-   - Fallback : `http://localhost:3100` (développement local)
-   - Preuve API : configurabilité du port via `process.env.PORT || 3100` (`shift-pilot-resa-api/src/server.js:26`)
-3. **Requête HTTP** : fetch GET vers `${API_BASE_URL}/transfers`
-4. **Résolution du routage API** : `shift-pilot-resa-api/src/server.js:10-13` vérifie le chemin et la méthode
-5. **Récupération du catalogue** : `listTransfers()` (`shift-pilot-resa-api/src/transfers.js:9-11`) retourne les trois transferts en mémoire
-6. **Transformation côté API** : calcul de `seatsLeft = seats - sold` pour chaque transfert (`shift-pilot-resa-api/src/transfers.js:13-15`) ; projection en JSON (champs `id`, `from`, `to`, `price`, `seatsLeft`)
-7. **Sérialisation et envoi** : réponse HTTP 200 avec Content-Type `application/json`
-8. **Parsing côté web** : `shift-pilot-resa-web/js/app.js:7` désérialise le JSON ; **aucune validation de schéma**
-9. **Rendu côté web** : itération sur le tableau ; pour chaque transfert, affichage au format `${from} → ${to} — ${price} XPF (${availableSeats} places)` (`shift-pilot-resa-web/js/app.js:10-15`)
-10. **Affichage à l'utilisateur** : liste HTML des transferts
-
-### Cassures observées dans le flux
-
-**1. Mismatch de noms de champ (bug actif)** : l'API retourne `seatsLeft`, mais le web affiche `t.availableSeats` (voir code ci-dessus). La propriété attendue n'existe pas dans la réponse JSON, donc `t.availableSeats` retourne `undefined`. En exécution réelle, chaque transfert affiche `(undefined places)` plutôt que le nombre de places restantes.
-
-**2. Pas de gestion d'erreur côté web** : si l'API est injoignable (réseau, CORS, DNS), la promesse fetch est rejetée ; aucun `try...catch` dans `js/app.js` — la page affiche une liste vide et un message d'erreur dans la console uniquement (`shift-pilot-resa-web/js/app.js:5-16`). Expérience utilisateur dégradée.
-
-**3. Pas de validation de réponse** : aucune vérification que la réponse est un tableau valide. Si l'API renvoie un objet comme `{ data: [...] }` ou un code d'erreur avec JSON, le `for...of` échoue silencieusement (`shift-pilot-resa-web/js/app.js:10-15`).
-
-**4. Pas d'actualisation de l'offre** : une fois la page chargée, la liste reste figée. Le changement d'état du stock côté API (via une future route POST) ne remonte jamais au navigateur. À clarifier si la réservation devra déclencher une actualisation manuel ou un refresh automatique.
+**État côté serveur** :
+- Chaque réservation décrémente le compteur du transfert
+- Redémarrage du process perd toutes les réservations (données volatile, acceptable pour pilote)
+- Pas de persistance cross-process
 
 ---
 
-## Partage de données et états
+## Risques et divergences (blocages et questions)
 
-### Stock de transferts
+### Risque 1 : Divergence de noms de champs (CRITIQUE DÉJÀ IMPACTÉ)
 
-**Source unique de vérité** : `shift-pilot-resa-api/src/transfers.js:3-7` — tableau en mémoire contenant les trois transferts.
+**Le problème** :
+- API expose `seatsLeft` dans la réponse GET /transfers (implémentation : `src/server.js:19`)
+- Frontend attend `availableSeats` pour affichage (code : `js/app.js:13`, `t.availableSeats`)
+- Résultat : frontend affiche `undefined places` au lieu du nombre réel
 
-**Propriétés de stock** :
-- `seats` (capacité totale) : jamais exposée en HTTP, jamais modifiée en runtime
-- `sold` (places vendues) : jamais exposée en HTTP, jamais incrémentée en runtime (valeurs initiales : 12 pour Papeete→Moorea, 5 pour Raiatea→Tahaa, 60 pour Bora Bora)
-- `seatsLeft` (dérivé) : calculé à la demande, exposé dans chaque réponse
+**Preuve** :
+- API (`src/server.js:14–20`) : projection `{ id, from, to, price, seatsLeft }`
+- Frontend (`js/app.js:13`) : template `${t.availableSeats} places`
+- Tests : API testé en isolation (200 OK, JSON valide) ; pas de test d'intégration end-to-end
 
-**Visualisation côté web** : le web reçoit `seatsLeft` et l'affiche ; aucune persistance locale.
+**Impact en production** :
+- Catalogue affichable en lecture seule — le champ de disponibilité manquant n'empêche pas le rendu textuel basique
+- Affichage cosmétique cassé : "Papeete → Moorea — 3500 XPF (undefined places)"
+- Confiance métier réduite : données sensoriellement inactives
 
-**Conséquence d'absence de réservation** : bien que `shift-pilot-resa-api` expose un champ `sold` sémantiquement lié à la réservation, aucune route n'existe pour l'incrémenter. Le web ne peut pas réserver. Les "places vendues" restent figées à l'état initial.
+**Recommandation** :
+- **Option A** (préféré) : Renommer côté API en `availableSeats` (un mot moins technique)
+- **Option B** : Mettre à jour le frontend pour accéder à `seatsLeft`
+- **Décision** : À prendre, bloque la livraison end-to-end
+
+### Risque 2 : Absence CORS (CRITIQUE POUR DÉPLOIEMENT MULTI-DOMAINE)
+
+**Le problème** :
+- API (`src/server.js`) n'expose aucun header `Access-Control-Allow-Origin`
+- Frontend sur domaine/port différent (ex. localhost:3000 vs localhost:3100 en dev)
+- Navigateur refuse requête cross-origin (CORS policy)
+
+**Preuve** :
+- Implémentation : `src/server.js` retourne 200 + JSON, mais zéro header CORS
+- Comportement réseau : requête fetch est blocquée côté navigateur avant d'arriver à l'app
+- Non testé en intégration multi-domaine
+
+**Impact en production** :
+- Si API et frontend déployés sur origines différentes → toutes les requêtes bloquées navigateur
+- Liste vide, aucun message d'erreur visible
+- Correctif simple mais requis avant tout déploiement
+
+**Recommandation** :
+- Ajouter `res.setHeader('Access-Control-Allow-Origin', '*')` ou domaine spécifié dans l'endpoint GET /transfers
+- Traiter aussi les requêtes OPTIONS (preflight) si HEAD ou headers personnalisés ajoutés à l'avenir
+- Tester en intégration avec frontend sur port différent avant livraison
+
+### Risque 3 : Validation manquante sur `seats` (CRITIQUE POUR DONNÉES)
+
+**Le problème** :
+- API accepte `seats` négatif, zéro ou absent dans POST /transfers/:id/reserve
+- Pas de vérification `Number.isInteger(seats) && seats >= 1`
+- Valeur par défaut silencieuse (`undefined → 1`) masque bugs clients
+
+**Preuve** :
+- Implémentation : `src/server.js:32` extrait `parsed.seats` sans validation
+- Fallback : `const seats = parsed.seats ?? 1` (nullish coalescing, `src/server.js:36`)
+- Risque : `POST /transfers/1/reserve body={"seats":-5}` décrémente le stock (inversé)
+
+**Impact** :
+- Stock peut descendre sous zéro (violation invariant)
+- Client mal écrit envoyant `-5` crée un overbooking caché
+- Chaîne d'intégration ne détecte le bug que si test avec valeurs négatives explicites
+
+**Recommandation** :
+- Valider et rejeter 400 si `seats` n'est pas un entier ≥ 1
+- Ajouter test de régression `POST /transfers/1/reserve body={"seats":-1}` attendant 400
+
+### Risque 4 : Formulaire réservation absent du frontend (FONCTIONNEL)
+
+**Le problème** :
+- Endpoint POST /transfers/:id/reserve implémenté et testé côté API
+- Aucun formulaire HTML côté frontend pour déclencher la réservation
+- README.md annonce « interface de réservation » mais code contient seulement la consultation
+
+**Preuve** :
+- Frontend : `index.html` ne contient aucun formulaire, bouton, ou champ input
+- Frontend : `js/app.js` n'a pas de fonction `reserve()` ou écoute d'événement
+- Workflow SHIAAAAAAAAAAAAAAAAAAAAAAAA-61 marque `Frontend réservation: TODO`
+
+**Impact** :
+- Voyageur ne peut pas réserver depuis le web
+- Réservation possible via CLI/API directement (test), mais pas via produit
+- Écart entre annonce fonctionnelle et implémentation
+
+**Statut** :
+- Accepté pour pilote (MVP : consultation seule)
+- À lister comme évolution : SHIAAAAAAAAAAAAAAAAAAAAAAAA-XXX Ajouter formulaire réservation côté frontend
+
+### Risque 5 : Configuration d'URL API non versionnée (DÉPLOIEMENT)
+
+**Le problème** :
+- Frontend utilise `window.API_BASE_URL` injecté par la page hôte (fallback `http://localhost:3100`)
+- Mécanisme d'injection en production non versionné dans les dépôts
+- Dépendance tacite : serveur qui sert `index.html` doit injecter une `<script>` ou un template avant le chargement du JS
+
+**Preuve** :
+- Frontend (`js/app.js:1`) : `const API_BASE_URL = (typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100"`
+- Aucun build step, aucun env var, aucun fichier `.env` versionnés
+- Infrastructure : comment est injectée `window.API_BASE_URL` ? Réponse : inconnue
+
+**Impact** :
+- Développeur en local : URL OK (fallback localhost:3100)
+- Déploiement test/prod : si injection oubliée → frontend appelle localhost:3100 au lieu du serveur réel
+- Debugging difficile : erreur silencieuse (liste vide, aucun message réseau)
+
+**Recommandation** :
+- Documenter le mécanisme d'injection (ex. : `<script>window.API_BASE_URL="https://api.prod.example.com"</script>` avant `app.js`)
+- Ou migrer vers fichier `config.json` servi par le serveur
+- Ajouter un test d'intégration : vérifier que l'API correcte est interrogée en fonction de `window.API_BASE_URL`
 
 ---
 
-## Périmètre délimité entre workspaces
+## Questions ouvertes (décisions attendues)
 
-### Responsabilités de shift-pilot-resa-api
+1. **Harmonisation du champ dispo** (BLOCAGE FONCTIONNEL)
+   - Utiliser `availableSeats` ou `seatsLeft` comme nom canonical ?
+   - Impact : changer soit l'API, soit le frontend
+   - **Deadline** : avant d'ajouter la réservation UI (sinon incompatibilité)
 
-- ✓ Maintenir le catalogue de transferts en mémoire
-- ✓ Calculer et exposer `seatsLeft` pour chaque transfert
-- ✓ Répondre aux requêtes HTTP GET /transfers avec un schéma de réponse cohérent
-- ✗ **Prise de réservation** : aucune route POST, aucune mutation du stock
-- ✗ **Persistance durable** : données perdues au redémarrage
+2. **Authentification pour les réservations** (ARCHITECTURE)
+   - Réservation actuellement anonyme (pas d'authentification API)
+   - Acceptable pour pilote ?
+   - Si non, où vit l'authentification : token JWT dans header, session cookie, autre ?
 
-### Responsabilités de shift-pilot-resa-web
+3. **Ajout formulaire réservation côté frontend** (SCOPE)
+   - À implémenter dans quelle itération (avant/après premier pilote) ?
+   - Formulaire simple (ID transfert + nombre places) ou multi-étape ?
 
-- ✓ Charger et afficher la liste des transferts
-- ✓ Accepter l'injection de l'endpoint API via une variable globale pour multienvironnement (dev/staging/prod)
-- ✓ Mettre en forme l'affichage pour l'utilisateur final
-- ✗ **Réservation** : aucun formulaire, aucun bouton d'action
-- ✗ **Filtrage/tri** : affichage au format reçu de l'API, dans l'ordre renvoyé
-- ✗ **Gestion d'erreur** : aucune robustesse réseau
+4. **Déploiement multi-domaine** (INFRASTRUCTURE)
+   - Comment sont déployés API et frontend : même origine ou séparé ?
+   - Qui contrôle les headers CORS en production ?
 
----
-
-## Questions ouvertes
-
-### 1. **Réservation : dans quel workspace ?**
-- `shift-pilot-resa-api` porte le nom « resa » (réservation) mais n'implémente **pas** la prise de réservation
-- `shift-pilot-resa-web` promet une « interface de réservation » dans son README mais n'a **pas** d'interface de prise de réservation
-- **Clarification requise** : la fonctionnalité est-elle prévue mais hors périmètre du pilote ? Vit-elle dans un autre workspace ?
-
-### 2. **Mismatch de noms de champ : design intentionnel ou bug ?**
-- API retourne `seatsLeft` ; web affiche `t.availableSeats`
-- Les deux noms n'apparaissent jamais dans la même propriété JSON
-- **Impact** : en pratique, `t.availableSeats` est `undefined` ; le web affiche `"(undefined places)"`
-- **Clarification requise** : Faut-il renommer `seatsLeft` en `availableSeats` dans l'API, ou renommer dans le web ?
-
-### 3. **Robustesse réseau côté web**
-- Le web n'a aucune gestion d'erreur en cas d'API injoignable
-- Comment l'utilisateur sait-il que la liste vide est due à un échec réseau plutôt qu'une offre vide ?
-- **Clarification requise** : Faut-il ajouter un affichage d'erreur ou une page de fallback ?
-
-### 4. **Actualisation de l'offre après réservation**
-- Une fois la page chargée, la liste ne se recharge jamais
-- Si une réservation est implémentée, comment le web saura-t-il qu'une place est vendormais ?
-- **Clarification requise** : bouton refresh manuel ? Polling périodique ? WebSocket ?
-
-### 5. **Port de l'API en production**
-- Le web fallback à `localhost:3100` ; en production, comment `window.API_BASE_URL` est-elle injectée ?
-- Aucun fichier de déploiement (Dockerfile, nginx config) trouvé dans les deux repos
-- **Clarification requise** : mécanisme d'injection d'endpoint, configuration d'infrastructure
-
-### 6. **Devise : XPF documentée ou supposée ?**
-- L'API expose `price: 3500` sans unité
-- Le web affiche `"3500 XPF"` — l'unité est codée en dur dans le template
-- **Clarification requise** : documenter la devise dans l'API ou laisser le web la supposer ?
-
-### 7. **Autres champs du catalogue**
-- L'API retourne 5 champs (`id`, `from`, `to`, `price`, `seatsLeft`)
-- Le web n'en utilise que 4 (pas `id`)
-- **Clarification requise** : l'`id` est-il utile pour la réservation future ? Faut-il ajouter horaires, compagnie, durée ?
+5. **Persistance des réservations** (FUTUR)
+   - Redémarrage API perd les réservations (acceptable pour pilote)
+   - Quand migrate-t-on vers une base de données ? Avant montée en charge ou après ?
 
 ---
 
-## Synthèse : un système incomplet mais articulé
+## Schéma d'intégration (local & production)
 
-**shift-pilot-resa** est un pilote de démonstration SHIFT/Paperclip composé de deux workspaces clairement séparés :
+### Développement local
 
-- **API** : fournit l'offre en lecture seule, avec un contrat HTTP bien délimité mais un nom sémantiquement trompeur (« resa » = réservation, absente du code)
-- **Web** : consomme l'API et l'affiche à l'utilisateur final ; absence de tout contrôle d'erreur et de toute capacité d'écriture
+```
+voyageur → navigateur:3000
+           ↓ fetch GET /transfers
+           API:3100
+           ↓ réponse JSON
+           ↑ affiche liste
+```
 
-Le **flux central** (consultation du catalogue) fonctionne, mais en mode dégradé (mismatch de noms de champs, pas d'erreur utilisateur, perte de données au redémarrage). Les **tensions principales** portent sur le **positionnement de la réservation** (nulle part implémentée) et sur la **robustesse end-to-end** (le web affiche une liste vide sans distinguer un échec réseau d'une offre vide).
+**Configuration** : Frontend fallback `http://localhost:3100`
 
-Les deux dépôts **doivent être déployés ensemble** pour que le système fonctionne : ni l'un ni l'autre n'a de valeur isolé.
+### Production (hypothèse)
+
+```
+voyageur → reverse proxy / serveur web (port 443 HTTPS)
+           ├─ GET /index.html → sert HTML + injecte window.API_BASE_URL = "https://api.example.com"
+           └─ Frontend fetch → API HTTPS (cross-origin)
+           
+           ↓ GET /transfers
+           
+           API backend (port 443 HTTPS, domaine séparé ou même)
+```
+
+**Configuration requise** : CORS headers si API sur domaine/port différent
+
+---
+
+## Validations de contrat (checklist d'intégration)
+
+Avant de déclarer le flux end-to-end fonctionnel :
+
+- [ ] **API GET /transfers retourne champ `availableSeats` (harmonisé nom)**
+- [ ] **API GET /transfers inclut header `Access-Control-Allow-Origin`**
+- [ ] **API POST /transfers/:id/reserve valide `seats >= 1` et rejette 400 si invalide**
+- [ ] **Frontend récupère et affiche les 4 champs sans `undefined`**
+- [ ] **Test d'intégration** : appel GET depuis navigateur sur port différent, validate réponse, affichage OK
+- [ ] **Formulaire réservation implémenté** ou issue de suivi créée avec priorité documentée
+- [ ] **Documentation déploiement** : mécanique d'injection `window.API_BASE_URL` versionnée ou CI/CD décrite
+

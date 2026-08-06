@@ -25,14 +25,14 @@ shift-pilot-resa-web/
 
 | Fichier | Rôle | Lignes utiles | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Fonction `loadTransfers()` qui récupère et affiche les transferts | 5–15 | **CRITIQUE** — c'est toute la valeur métier du produit |
+| `js/app.js` | Fonction `loadTransfers()` qui récupère et affiche les transferts | 5–16 | **CRITIQUE** — c'est toute la valeur métier du produit |
 | `index.html` | Conteneur de rendu `<ul id="transfers-list">` | 9 | Haute — point d'ancrage du DOM |
 
 **Entrée** : événement `DOMContentLoaded` du navigateur  
 **Sortie** : liste HTML de transferts affichée  
 **Logique**
 ```javascript
-// js/app.js, lignes 5–15
+// js/app.js, lignes 5–16
 async function loadTransfers() {
   const response = await fetch(`${API_BASE_URL}/transfers`);
   const transfers = await response.json();
