@@ -17,13 +17,23 @@ function makeDOM() {
       items.push(el.textContent);
       this.children.push(el);
     },
+    // Simule le comportement réel du navigateur : textContent efface les enfants
+    set textContent(v) {
+      errorText = v;
+      this.children.length = 0;
+      items.length = 0;
+    },
+    get textContent() { return errorText; }
+  };
+
+  const errorEl = {
     set textContent(v) { errorText = v; },
     get textContent() { return errorText; }
   };
 
   return {
     doc: {
-      getElementById: () => list,
+      getElementById: (id) => id === 'transfers-error' ? errorEl : list,
       createElement: (tag) => ({
         tag,
         textContent: '',
@@ -306,5 +316,58 @@ test('cancelReservation ignore un second appel si une opération est déjà en c
   assert.equal(fetchCalled, false, 'fetch appelé malgré une opération en cours');
   assert.ok(reservations.has(1), 'reservationId supprimé malgré une opération en cours');
   pendingTransfers.clear();
+  reservations.clear();
+});
+
+// --- Tests de régression SHIA-423 : un échec ne doit pas effacer les autres transferts ---
+
+test('reserve : un échec n\'efface pas les autres transferts de la liste', async () => {
+  const { doc, list, getError } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  pendingTransfers.clear();
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 5 },
+      { id: 2, from: 'Moorea', to: 'Huahine', price: 4000, seatsLeft: 3 },
+    ]
+  });
+  await loadTransfers();
+  assert.equal(list.children.length, 2, 'Pré-condition : 2 transferts attendus');
+
+  global.fetch = async () => ({ ok: false, status: 409 });
+  await reserve(1);
+
+  assert.equal(list.children.length, 2, 'Les autres transferts ont disparu après l\'échec de réservation');
+  const err = getError();
+  assert.ok(err !== null && err.includes('409'), `Message d'erreur absent ou incorrect : "${err}"`);
+  reservations.clear();
+});
+
+test('cancelReservation : un échec n\'efface pas les autres transferts de la liste', async () => {
+  const { doc, list, getError } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  pendingTransfers.clear();
+  reservations.set(1, 'uuid-1');
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 4 },
+      { id: 2, from: 'Moorea', to: 'Huahine', price: 4000, seatsLeft: 3 },
+    ]
+  });
+  await loadTransfers();
+  assert.equal(list.children.length, 2, 'Pré-condition : 2 transferts attendus');
+
+  global.fetch = async () => ({ ok: false, status: 409 });
+  await cancelReservation(1, 'uuid-1');
+
+  assert.equal(list.children.length, 2, 'Les autres transferts ont disparu après l\'échec d\'annulation');
+  const err = getError();
+  assert.ok(err !== null && err.includes('409'), `Message d'erreur absent ou incorrect : "${err}"`);
   reservations.clear();
 });
