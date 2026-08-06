@@ -41,7 +41,7 @@ async function loadTransfers() {
   list.innerHTML = "";
   for (const t of transfers) {
     const item = document.createElement("li");
-    item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.availableSeats} places)`;
+    item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
     list.appendChild(item);
   }
 }
@@ -51,7 +51,7 @@ async function loadTransfers() {
 - Pas de gestion d'erreur réseau (pas de `try/catch`)
 - Pas de vérification de `response.ok`
 - Pas de validation de la structure `transfers` (suppose un tableau)
-- Pas de validation des champs `from`, `to`, `price`, `availableSeats` (un absent → `undefined` affiché)
+- Pas de validation des champs `from`, `to`, `price`, `seatsLeft` (un absent → `undefined` affiché)
 - Contrat implicite avec l'API : ces 4 champs doivent exister
 
 **Hotspot n°1** du dépôt : si une erreur API se produit ici, la page reste silencieusement vide.
@@ -92,7 +92,7 @@ const transfers = await response.json();
 
 **Couplage avec `shift-pilot-resa-api`**
 - Endpoint consommé : `/transfers` → tableau JSON de transferts
-- Forme minimale attendue : tableau contenant des objets avec `{ from, to, price, availableSeats, ... }`
+- Forme minimale attendue : tableau contenant des objets avec `{ from, to, price, seatsLeft, ... }`
 - Aucun schéma n'existe dans ce dépôt pour valider ou documenter ce contrat
 
 **Hotspot n°2** : couplage implicite avec le schéma de l'API. Toute évolution du côté API (renommage de champ, changement de type) casse silencieusement le rendu.
@@ -188,12 +188,12 @@ const transfers = await response.json();
 ### Hotspot 2 — Couplage implicite avec le schéma API (`js/app.js`, ligne 13)
 
 ```javascript
-item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.availableSeats} places)`;
+item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
 ```
 
-**Risque** : un champ renommé ou absent côté API → `undefined` affiché sans erreur.
+**Risque** : un champ renommé ou absent côté API → `undefined` affiché sans erreur. **Note** : suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311, le front lit désormais `seatsLeft` qui correspond au champ réellement produit par l'API. La divergence est harmonisée.
 
-**Priorité** : **Haute** — fragile à l'évolution du partenaire (l'API).
+**Priorité** : **Moyenne** — fragile à l'évolution du partenaire (l'API), mais actuellement en phase avec la réalité observée.
 
 ### Hotspot 3 — Injection de configuration non documentée (`js/app.js`, lignes 2–3)
 
@@ -252,7 +252,7 @@ Aucun état local n'est persisté — tout est jetable après rendu.
 ## Règles de maintenance
 
 1. **Changement du contenant HTML ?** → vérifier que l'id `transfers-list` reste valide
-2. **Changement de l'API ?** → vérifier que les 4 champs (`from`, `to`, `price`, `availableSeats`) restent disponibles
+2. **Changement de l'API ?** → vérifier que les 4 champs (`from`, `to`, `price`, `seatsLeft`) restent disponibles
 3. **Changement du déploiement ?** → documenter le nouveau mécanisme d'injection de `window.API_BASE_URL`
 4. **Ajout de fonctionnalité ?** → considérer une refactorisation légère (extraction `api.js`, `render.js`) avant d'ajouter du code
 

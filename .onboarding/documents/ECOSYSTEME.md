@@ -20,8 +20,8 @@
 - **Contrat implicite** :
   - Requête : GET sur `${window.API_BASE_URL}/transfers` (fallback `http://localhost:3100`)
   - Réponse 200 : tableau JSON de transferts
-  - Champs attendus du frontend : `from`, `to`, `price`, `availableSeats`
-  - Champs réellement produits par l'API : `id`, `from`, `to`, `price`, `seatsLeft` (**DIVERGENCE : voir risques**)
+  - Champs attendus du frontend : `from`, `to`, `price`, `seatsLeft`
+  - Champs réellement produits par l'API : `id`, `from`, `to`, `price`, `seatsLeft` (**HARMONISÉS suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311**)
 - **Implémentation API** : `shift-pilot-resa-api/src/server.js:10–20` (route GET /transfers)
 - **Usage** : rendu DOM pour chaque transfert (`<li>Papeete → Moorea — 3500 XPF (X places)</li>`)
 
@@ -61,8 +61,7 @@ Transfer {
   from: "Papeete" | "Raiatea",
   to: "Moorea" | "Bora Bora" | "Tahaa",
   price: 1800 | 3500 | 21000 (XPF),
-  availableSeats: 0..28  // Attendu par frontend
-  seatsLeft: 0..28       // Produit par API (même sémantique; voir transfers.js:3-6 pour capacités réelles)
+  seatsLeft: 0..28       // Lu par frontend et produit par API (même sémantique; voir transfers.js:3-6 pour capacités réelles)
 }
 ```
 
@@ -89,27 +88,27 @@ Transfer {
 
 ## Risques et divergences (blocages et questions)
 
-### Risque 1 : Divergence de noms de champs (CRITIQUE DÉJÀ IMPACTÉ)
+### Risque 1 : Divergence de noms de champs (RÉSOLU — SHIAAAAAAAAAAAAAAAAAAAAAAAA-311, PR #4, commit b6910ec)
 
-**Le problème** :
+**Le problème (antérieur)** :
 - API expose `seatsLeft` dans la réponse GET /transfers (implémentation : `src/server.js:19`)
-- Frontend attend `availableSeats` pour affichage (code : `js/app.js:13`, `t.availableSeats`)
-- Résultat : frontend affiche `undefined places` au lieu du nombre réel
+- Frontend attendait `availableSeats` pour affichage (code antérieur : `js/app.js:13`, `t.availableSeats`)
+- Résultat observé : frontend affichait `undefined places` au lieu du nombre réel
 
-**Preuve** :
+**Preuve antérieure** :
 - API (`src/server.js:14–20`) : projection `{ id, from, to, price, seatsLeft }`
-- Frontend (`js/app.js:13`) : template `${t.availableSeats} places`
-- Tests : API testé en isolation (200 OK, JSON valide) ; pas de test d'intégration end-to-end
+- Frontend (ancien, avant correctif) : template `${t.availableSeats} places`
+- Tests : bug de régression confirmé dans `RELECTURE_PR_SHIAAAAAAAAAAAAAAAAAAAAAAAA-311.md`
 
-**Impact en production** :
-- Catalogue affichable en lecture seule — le champ de disponibilité manquant n'empêche pas le rendu textuel basique
-- Affichage cosmétique cassé : "Papeete → Moorea — 3500 XPF (undefined places)"
-- Confiance métier réduite : données sensoriellement inactives
+**Correction appliquée (commit b6910ec)** :
+- Frontend (`js/app.js:13`) : template **`${t.seatsLeft} places`**
+- Contrat harmonisé : API et frontend s'accordent maintenant sur le champ `seatsLeft`
+- Test de régression : test ajouté dans `test/frontend.test.js` (2026-08-06)
 
-**Recommandation** :
-- **Option A** (préféré) : Renommer côté API en `availableSeats` (un mot moins technique)
-- **Option B** : Mettre à jour le frontend pour accéder à `seatsLeft`
-- **Décision** : À prendre, bloque la livraison end-to-end
+**Impact de la correction** :
+- Catalogue désormais affichable correctement — affichage : "Papeete → Moorea — 3500 XPF (12 places)"
+- Confiance métier restaurée : données de disponibilité visibles et lisibles
+- Dépendance à l'API clarifiée : une seule source de vérité pour le champ dispo
 
 ### Risque 2 : Absence CORS (CRITIQUE POUR DÉPLOIEMENT MULTI-DOMAINE)
 
@@ -201,10 +200,10 @@ Transfer {
 
 ## Questions ouvertes (décisions attendues)
 
-1. **Harmonisation du champ dispo** (BLOCAGE FONCTIONNEL)
-   - Utiliser `availableSeats` ou `seatsLeft` comme nom canonical ?
-   - Impact : changer soit l'API, soit le frontend
-   - **Deadline** : avant d'ajouter la réservation UI (sinon incompatibilité)
+1. ~~**Harmonisation du champ dispo** (BLOCAGE FONCTIONNEL)~~ **RÉSOLU**
+   - ~~Utiliser `availableSeats` ou `seatsLeft` comme nom canonical ?~~
+   - ~~Impact : changer soit l'API, soit le frontend~~
+   - **Décision prise (SHIAAAAAAAAAAAAAAAAAAAAAAAA-311)** : utiliser `seatsLeft` (nom de l'API, cohérent avec la sémantique métier)
 
 2. **Authentification pour les réservations** (ARCHITECTURE)
    - Réservation actuellement anonyme (pas d'authentification API)
@@ -259,10 +258,10 @@ voyageur → reverse proxy / serveur web (port 443 HTTPS)
 
 Avant de déclarer le flux end-to-end fonctionnel :
 
-- [ ] **API GET /transfers retourne champ `availableSeats` (harmonisé nom)**
+- [x] **API GET /transfers retourne champ `seatsLeft` (harmonisé nom)** — RÉSOLU commit b6910ec
 - [ ] **API GET /transfers inclut header `Access-Control-Allow-Origin`**
 - [ ] **API POST /transfers/:id/reserve valide `seats >= 1` et rejette 400 si invalide**
-- [ ] **Frontend récupère et affiche les 4 champs sans `undefined`**
+- [x] **Frontend récupère et affiche les 4 champs sans `undefined`** — RÉSOLU commit b6910ec
 - [ ] **Test d'intégration** : appel GET depuis navigateur sur port différent, validate réponse, affichage OK
 - [ ] **Formulaire réservation implémenté** ou issue de suivi créée avec priorité documentée
 - [ ] **Documentation déploiement** : mécanique d'injection `window.API_BASE_URL` versionnée ou CI/CD décrite
