@@ -60,7 +60,7 @@ Ce cahier de recette couvre l'**unique fonctionnalité** de ce workspace : affic
 
 **Exemple de `<li>` attendue**
 ```
-Tahiti → Moorea — 5000 XPF (12 places)
+Papeete → Moorea — 3500 XPF (12 places)
 ```
 
 **Acceptation** : Les 5 assertions passent.
@@ -71,7 +71,7 @@ Tahiti → Moorea — 5000 XPF (12 places)
 
 **Objectif** : Vérifier que chaque transfert affiche correctement les 4 champs.
 
-**Contexte** : API renvoie des transferts avec `from`, `to`, `price`, `availableSeats`.
+**Contexte** : API renvoie des transferts avec `from`, `to`, `price`, `seatsLeft`.
 
 **Étapes**
 
@@ -86,16 +86,16 @@ Tahiti → Moorea — 5000 XPF (12 places)
 | 1 | `from` est affiché (avant la flèche →) | Visible, pas vide |
 | 2 | `to` est affiché (après la flèche →) | Visible, pas vide |
 | 3 | `price` est affiché suivi de ` XPF` | Format : `[nombre] XPF` |
-| 4 | `availableSeats` est affiché suivi de ` places` | Format : `[nombre] places` |
+| 4 | `seatsLeft` est affiché suivi de ` places` | Format : `[nombre] places` |
 | 5 | Tous les transferts retournés par l'API sont affichés | Aucune omission, aucun doublon |
 
 **Exemple de données API → rendu attendu**
 ```javascript
 // API retourne
-{ from: "Tahiti", to: "Moorea", price: 5000, availableSeats: 12 }
+{ from: "Papeete", to: "Moorea", price: 3500, seatsLeft: 12 }
 
 // Front affiche
-<li>Tahiti → Moorea — 5000 XPF (12 places)</li>
+<li>Papeete → Moorea — 3500 XPF (12 places)</li>
 ```
 
 **Acceptation** : Les 5 assertions passent pour au moins 3 transferts.
@@ -174,14 +174,14 @@ Tahiti → Moorea — 5000 XPF (12 places)
 
 1. Configurer l'API pour retourner :
    ```javascript
-   { from: "Tahiti", to: "Moorea", price: 5000 }
-   // availableSeats est absent
+   { from: "Papeete", to: "Moorea", price: 3500 }
+   // seatsLeft est absent
    ```
 2. Charger la page
 3. Observer le rendu du transfert
 
 **Comportement actuel** :
-- La `<li>` affiche : `Tahiti → Moorea — 5000 XPF (undefined places)`
+- La `<li>` affiche : `Papeete → Moorea — 3500 XPF (undefined places)`
 - Pas d'erreur JavaScript
 
 **Assertions**
@@ -333,7 +333,7 @@ Avant toute modification du code, tester :
 
 1. **Aucune modification d'`index.html`** : vérifier que l'id `transfers-list` et le titre restent inchangés
 2. **Aucune modification de l'URL API** : vérifier que l'appel cible toujours `${API_BASE_URL}/transfers`
-3. **Aucune modification de la structure des `<li>`** : vérifier que le format reste `[from] → [to] — [price] XPF ([seats] places)`
+3. **Aucune modification de la structure des `<li>`** : vérifier que le format reste `[from] → [to] — [price] XPF ([seatsLeft] places)` — suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311
 4. **Aucune modification de la police d'injection de `window.API_BASE_URL`** : documenter tout changement
 
 ## Preuves et traçabilité

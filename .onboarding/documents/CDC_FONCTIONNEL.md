@@ -22,7 +22,7 @@ Le `README.md` annonce une « **interface de réservation** de transferts inter-
 
 ### API distant — `shift-pilot-resa-api`
 
-- **Fournit** : le tableau de transferts au endpoint `GET /transfers` — au minimum les champs `from`, `to`, `price`, `availableSeats`, probablement d'autres champs non utilisés par ce front
+- **Fournit** : le tableau de transferts au endpoint `GET /transfers` — au minimum les champs `from`, `to`, `price`, `seatsLeft`, probablement d'autres champs non utilisés par ce front
 - **Protocole** : HTTP GET, réponse JSON
 - **Authentification** : aucune observable dans ce front — l'API est consommée en lecture anonyme ou avec un token injecté par la page hôte
 - **Contrat implicite** : les 4 champs affichés sont directement accédés sans validation — tout changement de nom ou de type côté API produirait un `undefined` côté front
@@ -83,7 +83,7 @@ Chargement de la page `index.html` dans un navigateur web.
    ```javascript
    for (const t of transfers) {
      const item = document.createElement("li");
-     item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.availableSeats} places)`;
+     item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
      list.appendChild(item);
    }
    ```
@@ -111,11 +111,11 @@ Chargement de la page `index.html` dans un navigateur web.
    - `from` : origine du transfert
    - `to` : destination du transfert
    - `price` : tarif du transfert
-   - `availableSeats` : nombre de places disponibles
+   - `seatsLeft` : nombre de places disponibles
    - **Chacun est accédé directement sans validation.** Un champ absent produit `undefined` dans le rendu.
 
 4. **Sémantique des places disponibles**  
-   - Le champ `availableSeats` est affiché tel quel
+   - Le champ `seatsLeft` est affiché tel quel
    - Interprétation supposée : `0` = complet, `> 0` = places libres
    - Aucune logique du front ne dépend de cette valeur (pas de masquage de transfert complet, pas de désactivation de bouton)
 
@@ -165,7 +165,7 @@ Chargement de la page `index.html` dans un navigateur web.
 | `from` | ✓ Oui | Chaîne | Chaîne (nom d'île) | Oui | Affichage : origine du transfert |
 | `to` | ✓ Oui | Chaîne | Chaîne (nom d'île) | Oui | Affichage : destination du transfert |
 | `price` | ✓ Oui | Nombre ou chaîne | Nombre (XPF) | Oui | Affichage : tarif du transfert |
-| `availableSeats` | ✓ Oui | Nombre | Nombre entier | Oui | Affichage : places restantes |
+| `seatsLeft` | ✓ Oui | Nombre | Nombre entier | Oui | Affichage : places restantes |
 | *Autres champs* | ✗ Non | ? | ? | ? | L'API peut renvoyer des identifiants, horaires, opérateurs, statut — ce front ne les utilise pas |
 
 **Confiance**
