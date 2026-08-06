@@ -17,7 +17,7 @@ shift-pilot-resa-web/
 
 ## Domaines et fichiers
 
-### Domaine 1 — Consultation des transferts (`consultation-transferts`)
+### Domaine 1 — Consultation et réservation de transferts (`transferts-reservation`)
 
 **Catégorie** : métier (cœur du produit)  
 **Priorité** : Critique  
@@ -25,36 +25,61 @@ shift-pilot-resa-web/
 
 | Fichier | Rôle | Lignes utiles | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Fonction `loadTransfers()` qui récupère et affiche les transferts | 5–16 | **CRITIQUE** — c'est toute la valeur métier du produit |
+| `js/app.js` | Fonctions d'affichage (`loadTransfers`), de réservation (`reserve`), d'annulation (`cancelReservation`), et état (`reservations` Map) | 6–73 | **CRITIQUE** — toute la logique métier du produit |
 | `index.html` | Conteneur de rendu `<ul id="transfers-list">` | 9 | Haute — point d'ancrage du DOM |
 
-**Entrée** : événement `DOMContentLoaded` du navigateur  
-**Sortie** : liste HTML de transferts affichée  
-**Logique**
+**Entrée** : événement `DOMContentLoaded` du navigateur, clics sur boutons « Réserver » / « Annuler »  
+**Sortie** : liste HTML de transferts avec boutons d'action, état des réservations  
+**Logique principale**
 ```javascript
-// js/app.js, lignes 5–16
-async function loadTransfers() {
-  const response = await fetch(`${API_BASE_URL}/transfers`);
-  const transfers = await response.json();
-  
+// js/app.js, lignes 8–39
+export async function loadTransfers() {
   const list = document.getElementById("transfers-list");
-  list.innerHTML = "";
-  for (const t of transfers) {
-    const item = document.createElement("li");
-    item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
-    list.appendChild(item);
+  try {
+    const response = await fetch(`${API_BASE_URL}/transfers`);
+    if (!response.ok) {
+      throw new Error(`Erreur serveur : ${response.status}`);
+    }
+    const transfers = await response.json();
+
+    list.innerHTML = "";
+    for (const t of transfers) {
+      const item = document.createElement("li");
+      item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
+
+      const reservationId = reservations.get(t.id);
+      if (reservationId) {
+        const btn = document.createElement("button");
+        btn.textContent = "Annuler";
+        btn.addEventListener("click", () => cancelReservation(t.id, reservationId));
+        item.appendChild(btn);
+      } else if (t.seatsLeft > 0) {
+        const btn = document.createElement("button");
+        btn.textContent = "Réserver";
+        btn.addEventListener("click", () => reserve(t.id));
+        item.appendChild(btn);
+      }
+
+      list.appendChild(item);
+    }
+  } catch (err) {
+    list.textContent = `Impossible de charger les transferts : ${err.message}`;
   }
 }
 ```
 
-**Points d'attention**
-- Pas de gestion d'erreur réseau (pas de `try/catch`)
-- Pas de vérification de `response.ok`
-- Pas de validation de la structure `transfers` (suppose un tableau)
-- Pas de validation des champs `from`, `to`, `price`, `seatsLeft` (un absent → `undefined` affiché)
-- Contrat implicite avec l'API : ces 4 champs doivent exister
+**Fonctions supplémentaires**
+- `reserve(transferId)` (lignes 42–57) : POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
+- `cancelReservation(transferId, reservationId)` (lignes 60–73) : DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
 
-**Hotspot n°1** du dépôt : si une erreur API se produit ici, la page reste silencieusement vide.
+**Points d'attention**
+- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 12–13, 22–37)
+- État client `reservations` (Map) n'est pas persisté — oublié au rechargement de page
+- Pas de validation des champs `id`, `from`, `to`, `price`, `seatsLeft` — un absent → `undefined` affiché
+- Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert
+- Affichage des erreurs remplace entièrement le contenu du conteneur `list` (invasif en cas de liste large)
+
+**Hotspot n°1** du dépôt : le champ `id` de chaque transfert doit exister et être stable — son absence ou mutation casse la gestion des réservations.
 
 ### Domaine 2 — Intégration API (`integration-api`)
 
@@ -64,7 +89,7 @@ async function loadTransfers() {
 
 | Fichier | Rôle | Lignes | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Configuration et appel réseau vers `shift-pilot-resa-api` | 2–3, 6 | Haute — point de couplage |
+| `js/app.js` | Configuration et appels réseau vers `shift-pilot-resa-api` | 2–3, 11, 45–49, 65–67 | Haute — point de couplage critique |
 
 **Configuration d'URL**
 ```javascript
@@ -77,33 +102,48 @@ const API_BASE_URL =
 - **En développement** : fallback automatique vers `localhost:3100` — aucune configuration manuelle requise
 - **En production** : nécessite une injection de `window.API_BASE_URL` par un mécanisme externe non versionné (probablement script serveur ou build)
 
-**Appel réseau**
+**Appels réseau**
 ```javascript
-// js/app.js, lignes 6–7
+// js/app.js, ligne 11 — GET /transfers
 const response = await fetch(`${API_BASE_URL}/transfers`);
-const transfers = await response.json();
+
+// js/app.js, lignes 45–49 — POST /transfers/{id}/reserve
+const response = await fetch(`${API_BASE_URL}/transfers/${transferId}/reserve`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ seats: 1 }),
+});
+
+// js/app.js, lignes 65–67 — DELETE /transfers/{id}/reservations/{id}
+const response = await fetch(
+  `${API_BASE_URL}/transfers/${transferId}/reservations/${reservationId}`,
+  { method: "DELETE" }
+);
 ```
 
-- Endpoint : `GET ${API_BASE_URL}/transfers`
+- **Endpoints consommés** :
+  - `GET /transfers` : tableau JSON de transferts avec champs `id`, `from`, `to`, `price`, `seatsLeft`
+  - `POST /transfers/{transferId}/reserve` : réserve une place (body: `{ seats: 1 }`), réponse: JSON contenant `reservationId`
+  - `DELETE /transfers/{transferId}/reservations/{reservationId}` : annule une réservation
 - Pas d'authentification visible
-- Pas de header personnalisé
+- Pas de header personnalisé au-delà de `Content-Type: application/json` pour POST
 - Pas de gestion du timeout
 - Pas de retry
 
 **Couplage avec `shift-pilot-resa-api`**
-- Endpoint consommé : `/transfers` → tableau JSON de transferts
-- Forme minimale attendue : tableau contenant des objets avec `{ from, to, price, seatsLeft, ... }`
-- Aucun schéma n'existe dans ce dépôt pour valider ou documenter ce contrat
+- Endpoints consommés et contrats : voir ci-dessus
+- Champ `id` sur transferts est critique pour l'indexation des réservations
+- Forme exacte de la réponse POST et format de `reservationId` ne sont pas documentés
+- Aucun schéma n'existe dans ce dépôt pour valider ou documenter ces contrats
 
-**Hotspot n°2** : couplage implicite avec le schéma de l'API. Toute évolution du côté API (renommage de champ, changement de type) casse silencieusement le rendu.
+**Hotspot n°2** : couplage implicite avec le schéma de l'API. Toute évolution du côté API (renommage de champ, absence du champ `id`, changement du format de `reservationId`) casse silencieusement le fonctionnement.
 
-### Autres
+### Autres domaines
 
-Aucun autre domaine n'a de logique codée dans ce dépôt. Les domaines suivants sont revendiqués mais absents :
+Les domaines suivants sont utilisés dans ce dépôt mais avec une portée limitée :
 
-- **Réservation** : aucun code (`grep` sur `reserv|booking|panier|cart` → 0)
-- **Authentification** : aucune (consommation anonyme)
-- **Persistance locale** : aucune (`grep` sur `localStorage|sessionStorage|indexedDB` → 0)
+- **Persistance locale** : `Map` client (`reservations`) pour stocker les réservations de l'utilisateur dans la session courante — aucun `localStorage`, `sessionStorage`, ou `indexedDB` (`grep` → 0). État perdu au rechargement.
+- **Authentification** : aucune visible dans le code — consommation anonyme de l'API, aucun token, aucun header d'autorisation.
 - **Routing** : aucun (une page unique)
 
 ## Points d'entrée
@@ -142,8 +182,8 @@ La fonction est exportée implicitement au scope global (pas de `export`, pas de
 
 | Fichier | Raison | Risque |
 |---------|--------|---------|
-| `js/app.js` | **Unique** point de logique exécutable — toute la valeur du produit y est | Alto — bugue ici = produit non fonctionnel |
-| `index.html` | Point d'entrée et conteneur de rendu — si l'id `transfers-list` change, le JS casse | Moyen — changement rare et visible |
+| `js/app.js` | **Unique** point de logique exécutable — toute la valeur du produit y est (affichage, réservation, annulation) | **CRITIQUE** — bugue ici = produit non fonctionnel |
+| `index.html` | Point d'entrée et conteneur de rendu — si l'id `transfers-list` change, le JS casse ; `<script type="module">` est nécessaire pour l'export/import | Moyen — changement rare mais visible |
 
 ## Fichiers de documentation
 
@@ -174,28 +214,41 @@ La fonction est exportée implicitement au scope global (pas de `export`, pas de
 
 ## Hotspots et zones critiques
 
-### Hotspot 1 — Appel réseau non gardé (`js/app.js`, lignes 6–7)
+### Hotspot 1 — Couplage implicite avec le schéma API — champ `id` critique (`js/app.js`, lignes 21, 52, 71)
 
 ```javascript
-const response = await fetch(`${API_BASE_URL}/transfers`);
-const transfers = await response.json();
+const reservationId = reservations.get(t.id);  // ligne 21
+reservations.set(transferId, data.reservationId);  // ligne 52
+reservations.delete(transferId);  // ligne 71
 ```
 
-**Risque** : API injoignable, erreur 5xx, réponse non-JSON, non-tableau → exception non capturée, page vide sans message.
+**Risque** : le champ `id` de chaque transfert est utilisé comme clé pour stocker/récupérer les réservations. Son absence, mutation, ou instabilité casse complètement la gestion des réservations (mauvaise correspondance entre UI et état client).
 
-**Priorité** : **Critique** — premier correctif avant production.
+**Priorité** : **CRITIQUE** — le champ `id` doit exister, être unique et stable pour chaque transfert.
 
-### Hotspot 2 — Couplage implicite avec le schéma API (`js/app.js`, ligne 13)
+### Hotspot 2 — Couplage implicite avec le schéma API — champs d'affichage (`js/app.js`, ligne 19)
 
 ```javascript
 item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
 ```
 
-**Risque** : un champ renommé ou absent côté API → `undefined` affiché sans erreur. **Note** : suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311, le front lit désormais `seatsLeft` qui correspond au champ réellement produit par l'API. La divergence est harmonisée.
+**Risque** : un champ renommé ou absent côté API (`from`, `to`, `price`, `seatsLeft`) → `undefined` affiché sans erreur. Actuellement harmonisé suite au correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311.
 
-**Priorité** : **Moyenne** — fragile à l'évolution du partenaire (l'API), mais actuellement en phase avec la réalité observée.
+**Priorité** : **Moyenne** — fragile à l'évolution de l'API, mais actuellement en phase.
 
-### Hotspot 3 — Injection de configuration non documentée (`js/app.js`, lignes 2–3)
+### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 36–37)
+
+```javascript
+} catch (err) {
+  list.textContent = `Impossible de charger les transferts : ${err.message}`;
+}
+```
+
+**Risque** : tout message d'erreur remplace entièrement le contenu du conteneur `list`. Sur une longue liste, un seul transfert qui échoue à traiter efface toute l'UI.
+
+**Priorité** : **Moyenne** — affecte l'UX en cas d'erreur partielle, mais les scénarios d'erreur partielle sont rares (soit l'API répond entièrement, soit elle échoue).
+
+### Hotspot 4 — Injection de configuration non documentée (`js/app.js`, lignes 2–3)
 
 ```javascript
 const API_BASE_URL =
@@ -204,7 +257,7 @@ const API_BASE_URL =
 
 **Risque** : mécanisme d'injection en production non versionné, comportement en prod non reproductible localement.
 
-**Priorité** : **Moyenne** — acceptable en pilote, critique en production.
+**Priorité** : **Moyenne** — acceptable en pilote, critique en production si le mécanisme d'injection échoue.
 
 ## Chemins de données
 
