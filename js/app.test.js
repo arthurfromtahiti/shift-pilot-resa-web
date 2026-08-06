@@ -1,31 +1,51 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadTransfers } from './app.js';
+import { loadTransfers, reserve, cancelReservation, reservations } from './app.js';
 
 function makeDOM() {
   const items = [];
   let errorText = null;
+
   const list = {
-    set innerHTML(_) {},
+    children: [],
+    set innerHTML(_) {
+      this.children.length = 0;
+      items.length = 0;
+    },
     get innerHTML() { return ''; },
-    appendChild(el) { items.push(el.textContent); },
+    appendChild(el) {
+      items.push(el.textContent);
+      this.children.push(el);
+    },
     set textContent(v) { errorText = v; },
     get textContent() { return errorText; }
   };
+
   return {
     doc: {
       getElementById: () => list,
-      createElement: () => ({ textContent: '' }),
+      createElement: (tag) => ({
+        tag,
+        textContent: '',
+        children: [],
+        listeners: {},
+        appendChild(child) { this.children.push(child); },
+        addEventListener(event, fn) { this.listeners[event] = fn; }
+      }),
       addEventListener() {}
     },
+    list,
     items,
     getError: () => errorText
   };
 }
 
+// --- Tests existants (affichage de la liste) ---
+
 test('affiche la liste des transferts si l\'API répond avec succès', async () => {
   const { doc, items } = makeDOM();
   global.document = doc;
+  reservations.clear();
   global.fetch = async () => ({
     ok: true,
     json: async () => [
@@ -47,6 +67,7 @@ test('affiche la liste des transferts si l\'API répond avec succès', async () 
 test("affiche une erreur si l'API répond en non-2xx", async () => {
   const { doc, getError } = makeDOM();
   global.document = doc;
+  reservations.clear();
   global.fetch = async () => ({ ok: false, status: 500 });
 
   await loadTransfers();
@@ -59,6 +80,7 @@ test("affiche une erreur si l'API répond en non-2xx", async () => {
 test('affiche une erreur si le réseau est injoignable', async () => {
   const { doc, getError } = makeDOM();
   global.document = doc;
+  reservations.clear();
   global.fetch = async () => { throw new TypeError('Failed to fetch'); };
 
   await loadTransfers();
@@ -69,4 +91,155 @@ test('affiche une erreur si le réseau est injoignable', async () => {
     err.includes('Failed to fetch'),
     `Le message d'erreur n'inclut pas la cause : "${err}"`
   );
+});
+
+// --- Tests d'acceptation : boutons Réserver / Annuler ---
+
+test('affiche le bouton Réserver pour un transfert avec places disponibles', async () => {
+  const { doc, list } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 5 }]
+  });
+
+  await loadTransfers();
+
+  const liEl = list.children[0];
+  assert.ok(liEl, 'Aucun élément dans la liste');
+  const btn = liEl.children.find(c => c.textContent === 'Réserver');
+  assert.ok(btn, 'Bouton Réserver absent pour un transfert avec places disponibles');
+});
+
+test('n\'affiche pas le bouton Réserver si seatsLeft = 0', async () => {
+  const { doc, list } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 0 }]
+  });
+
+  await loadTransfers();
+
+  const liEl = list.children[0];
+  assert.ok(liEl, 'Aucun élément dans la liste');
+  assert.equal(liEl.children.length, 0, 'Un bouton inattendu est présent pour seatsLeft = 0');
+});
+
+test('affiche le bouton Annuler si une réservation est active', async () => {
+  const { doc, list } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  reservations.set(1, 'uuid-1');
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 9 }]
+  });
+
+  await loadTransfers();
+
+  const liEl = list.children[0];
+  assert.ok(liEl, 'Aucun élément dans la liste');
+  const btn = liEl.children.find(c => c.textContent === 'Annuler');
+  assert.ok(btn, 'Bouton Annuler absent alors qu\'une réservation est active');
+  reservations.clear();
+});
+
+// --- Tests d'acceptation : reserve() ---
+
+test('reserve envoie POST /transfers/:id/reserve et stocke le reservationId', async () => {
+  const { doc, items, list } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+
+  let callCount = 0;
+  global.fetch = async (url, opts) => {
+    callCount++;
+    if (callCount === 1) {
+      assert.ok(url.includes('/transfers/1/reserve'), `URL inattendue : ${url}`);
+      assert.equal(opts?.method, 'POST');
+      return { ok: true, json: async () => ({ reservationId: 'uuid-1', transferId: 1, seatsLeft: 9 }) };
+    }
+    // Second call: loadTransfers après réservation
+    return {
+      ok: true,
+      json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 9 }]
+    };
+  };
+
+  await reserve(1);
+
+  assert.ok(reservations.has(1), 'reservationId non stocké dans reservations');
+  assert.equal(reservations.get(1), 'uuid-1', 'reservationId incorrect');
+  assert.ok(items.length > 0, 'La liste n\'a pas été rafraîchie après réservation');
+  // Le bouton Annuler doit apparaître (réservation active)
+  const liEl = list.children[0];
+  const cancelBtn = liEl?.children?.find(c => c.textContent === 'Annuler');
+  assert.ok(cancelBtn, 'Bouton Annuler absent après réservation réussie');
+  reservations.clear();
+});
+
+test('reserve affiche une erreur si l\'API répond en non-2xx', async () => {
+  const { doc, getError } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  global.fetch = async () => ({ ok: false, status: 409 });
+
+  await reserve(1);
+
+  const err = getError();
+  assert.ok(err !== null, "Aucun message d'erreur affiché");
+  assert.ok(err.includes('409'), `Le message d'erreur ne mentionne pas le code : "${err}"`);
+  assert.ok(!reservations.has(1), 'reservationId stocké malgré l\'erreur');
+});
+
+// --- Tests d'acceptation : cancelReservation() ---
+
+test('cancelReservation envoie DELETE et supprime la réservation', async () => {
+  const { doc, items, list } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  reservations.set(1, 'uuid-1');
+
+  let callCount = 0;
+  global.fetch = async (url, opts) => {
+    callCount++;
+    if (callCount === 1) {
+      assert.ok(url.includes('/transfers/1/reservations/uuid-1'), `URL inattendue : ${url}`);
+      assert.equal(opts?.method, 'DELETE');
+      return { ok: true, json: async () => ({ seatsLeft: 10 }) };
+    }
+    // Second call: loadTransfers après annulation
+    return {
+      ok: true,
+      json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 10 }]
+    };
+  };
+
+  await cancelReservation(1, 'uuid-1');
+
+  assert.ok(!reservations.has(1), 'reservationId non supprimé de reservations');
+  assert.ok(items.length > 0, 'La liste n\'a pas été rafraîchie après annulation');
+  // Le bouton Réserver doit réapparaître (places libérées, plus de réservation active)
+  const liEl = list.children[0];
+  const reserveBtn = liEl?.children?.find(c => c.textContent === 'Réserver');
+  assert.ok(reserveBtn, 'Bouton Réserver absent après annulation (places libérées)');
+});
+
+test('cancelReservation affiche une erreur si l\'API répond 404', async () => {
+  const { doc, getError } = makeDOM();
+  global.document = doc;
+  reservations.clear();
+  reservations.set(1, 'uuid-1');
+  global.fetch = async () => ({ ok: false, status: 404 });
+
+  await cancelReservation(1, 'uuid-1');
+
+  const err = getError();
+  assert.ok(err !== null, "Aucun message d'erreur affiché");
+  assert.ok(err.includes('404'), `Le message d'erreur ne mentionne pas le code : "${err}"`);
+  assert.ok(reservations.has(1), 'reservationId supprimé malgré l\'erreur');
+  reservations.clear();
 });
