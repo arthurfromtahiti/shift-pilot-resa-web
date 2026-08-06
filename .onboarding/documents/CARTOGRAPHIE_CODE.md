@@ -174,9 +174,9 @@ Réponse JSON est rendue dans le DOM
 **Événement déclencheur** : `DOMContentLoaded` (js/app.js, ligne 19)  
 **Fonction déclenchée** : `loadTransfers()` (js/app.js, lignes 5–16)
 
-### Secondaire — Rappel manuel de `loadTransfers()` (théorique)
+### Secondaire — Rafraîchissement après action
 
-La fonction est exportée implicitement au scope global (pas de `export`, pas de module). Un code externe pourrait, en théorie, appeler `loadTransfers()` à nouveau pour rafraîchir la liste. Aucun mécanisme d'appel n'existe dans ce dépôt (pas de bouton, pas de polling, pas de WebSocket).
+La liste est automatiquement rafraîchie après chaque réservation ou annulation. Les fonctions `reserve()` (ligne 55) et `cancelReservation()` (ligne 72) appellent `loadTransfers()` à la suite de leur action API. Ce mécanisme de rappel n'est plus théorique : il est utilisé par les boutons d'action de la liste.
 
 ## Fichiers critiques
 

@@ -6,9 +6,9 @@
 
 ## Nature du projet
 
-Interface web **cliente** de consultation de transferts inter-îles, sans build ni dépendance (`README.md` : *« HTML + JS natif, aucune dépendance, aucun build »*). Le dépôt ne contient **aucune logique métier propre ni persistance** : c'est un front mince qui interroge une API distante (`shift-pilot-resa-api`, dépôt séparé du même projet) et affiche le résultat. Le contexte est la Polynésie française : les prix sont libellés en **XPF** (`js/app.js`, ligne d'affichage) et les trajets sont des liaisons `from → to` avec un nombre de places (`availableSeats`).
+Interface web **cliente** de consultation et réservation de transferts inter-îles, sans build ni dépendance (`README.md` : *« HTML + JS natif, aucune dépendance, aucun build »*). Le dépôt contient de la **logique métier** (réservation et annulation de transferts) et un **état client** (Map `reservations` stockant les réservations de l'utilisateur) : c'est un front qui interroge une API distante (`shift-pilot-resa-api`, dépôt séparé du même projet) et gère les interactions de l'utilisateur. Le contexte est la Polynésie française : les prix sont libellés en **XPF** (`js/app.js`, ligne 20) et les trajets sont des liaisons `from → to` avec un nombre de places (`seatsLeft`).
 
-Bien que le `README.md` parle d'une *« interface de réservation »*, **aucun code de réservation** n'existe dans ce workspace (recherche `grep -niE "reserv|booking|panier|cart|book|order|commande"` sur `js/`+`html` → aucun résultat). En l'état, ce dépôt ne fait que **consulter et afficher** ; la réservation, si elle existe, vit ailleurs (voir Incertitudes).
+Le `README.md` parle d'une *« interface de réservation »*, et cette fonctionnalité **est implémentée** dans le code : les fonctions `reserve()` et `cancelReservation()` sont exportées depuis `js/app.js` (lignes 42–59 et 61–76). L'utilisateur peut réserver une place (clic sur bouton « Réserver ») ou annuler une réservation existante (clic sur bouton « Annuler »). L'état des réservations est stocké dans une `Map` client (`js/app.js`, ligne 6) qui persiste pendant la session.
 
 ### Consultation et réservation de transferts (`transferts-reservation`)
 - **Catégorie** : métier
