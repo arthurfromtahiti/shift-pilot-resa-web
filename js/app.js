@@ -4,6 +4,8 @@ const API_BASE_URL =
 
 // State: map transferId -> reservationId (réservations actives de l'utilisateur)
 export const reservations = new Map();
+// Set de transferIds avec une opération en cours (protection double-clic)
+export const pendingTransfers = new Set();
 
 export async function loadTransfers() {
   const list = document.getElementById("transfers-list");
@@ -40,6 +42,8 @@ export async function loadTransfers() {
 }
 
 export async function reserve(transferId) {
+  if (reservations.has(transferId) || pendingTransfers.has(transferId)) return;
+  pendingTransfers.add(transferId);
   const list = document.getElementById("transfers-list");
   try {
     const response = await fetch(`${API_BASE_URL}/transfers/${transferId}/reserve`, {
@@ -55,10 +59,14 @@ export async function reserve(transferId) {
     await loadTransfers();
   } catch (err) {
     list.textContent = `Impossible de réserver : ${err.message}`;
+  } finally {
+    pendingTransfers.delete(transferId);
   }
 }
 
 export async function cancelReservation(transferId, reservationId) {
+  if (pendingTransfers.has(transferId)) return;
+  pendingTransfers.add(transferId);
   const list = document.getElementById("transfers-list");
   try {
     const response = await fetch(
@@ -72,6 +80,8 @@ export async function cancelReservation(transferId, reservationId) {
     await loadTransfers();
   } catch (err) {
     list.textContent = `Impossible d'annuler : ${err.message}`;
+  } finally {
+    pendingTransfers.delete(transferId);
   }
 }
 
