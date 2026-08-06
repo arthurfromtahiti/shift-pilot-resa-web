@@ -25,14 +25,14 @@ shift-pilot-resa-web/
 
 | Fichier | Rôle | Lignes utiles | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Fonctions d'affichage (`loadTransfers`), de réservation (`reserve`), d'annulation (`cancelReservation`), et état (`reservations` Map) | 6–73 | **CRITIQUE** — toute la logique métier du produit |
+| `js/app.js` | Fonctions d'affichage (`loadTransfers`), de réservation (`reserve`), d'annulation (`cancelReservation`), état (`reservations` Map + `pendingTransfers` Set) | 6–86 | **CRITIQUE** — toute la logique métier du produit |
 | `index.html` | Conteneur de rendu `<ul id="transfers-list">` | 9 | Haute — point d'ancrage du DOM |
 
 **Entrée** : événement `DOMContentLoaded` du navigateur, clics sur boutons « Réserver » / « Annuler »  
 **Sortie** : liste HTML de transferts avec boutons d'action, état des réservations  
 **Logique principale**
 ```javascript
-// js/app.js, lignes 8–40
+// js/app.js, lignes 10–42
 export async function loadTransfers() {
   const list = document.getElementById("transfers-list");
   try {
@@ -69,12 +69,13 @@ export async function loadTransfers() {
 ```
 
 **Fonctions supplémentaires**
-- `reserve(transferId)` (lignes 42–59) : POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
-- `cancelReservation(transferId, reservationId)` (lignes 61–76) : DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
+- `reserve(transferId)` (lignes 44–65) : vérifie `reservations` et `pendingTransfers` avant d'agir, POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
+- `cancelReservation(transferId, reservationId)` (lignes 67–86) : vérifie `pendingTransfers` avant d'agir, DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
 
 **Points d'attention**
-- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 10–39)
-- État client `reservations` (Map) n'est pas persisté — oublié au rechargement de page
+- Gestion d'erreur avec `try/catch` et vérification `response.ok` présents (lignes 12–41)
+- `pendingTransfers` (Set) verrouille chaque `transferId` pendant un appel réseau — protection anti double-clic (SHIA-383)
+- États clients `reservations` (Map) et `pendingTransfers` (Set) ne sont pas persistés — oubliés au rechargement de page
 - Pas de validation des champs `id`, `from`, `to`, `price`, `seatsLeft` — un absent → `undefined` affiché
 - Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert
 - Affichage des erreurs remplace entièrement le contenu du conteneur `list` (invasif en cas de liste large)
@@ -89,7 +90,7 @@ export async function loadTransfers() {
 
 | Fichier | Rôle | Lignes | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Configuration et appels réseau vers `shift-pilot-resa-api` | 2–3, 11, 45–49, 65–67 | Haute — point de couplage critique |
+| `js/app.js` | Configuration et appels réseau vers `shift-pilot-resa-api` | 2–3, 13, 49–53, 72–75 | Haute — point de couplage critique |
 
 **Configuration d'URL**
 ```javascript
@@ -104,17 +105,17 @@ const API_BASE_URL =
 
 **Appels réseau**
 ```javascript
-// js/app.js, ligne 11 — GET /transfers
+// js/app.js, ligne 13 — GET /transfers
 const response = await fetch(`${API_BASE_URL}/transfers`);
 
-// js/app.js, lignes 45–49 — POST /transfers/{id}/reserve
+// js/app.js, lignes 49–53 — POST /transfers/{id}/reserve
 const response = await fetch(`${API_BASE_URL}/transfers/${transferId}/reserve`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ seats: 1 }),
 });
 
-// js/app.js, lignes 64–67 — DELETE /transfers/{id}/reservations/{id}
+// js/app.js, lignes 72–75 — DELETE /transfers/{id}/reservations/{id}
 const response = await fetch(
   `${API_BASE_URL}/transfers/${transferId}/reservations/${reservationId}`,
   { method: "DELETE" }
@@ -142,7 +143,7 @@ const response = await fetch(
 
 Les domaines suivants sont utilisés dans ce dépôt mais avec une portée limitée :
 
-- **Persistance locale** : `Map` client (`reservations`) pour stocker les réservations de l'utilisateur dans la session courante — aucun `localStorage`, `sessionStorage`, ou `indexedDB` (`grep` → 0). État perdu au rechargement.
+- **Persistance locale** : `Map` client (`reservations`) et `Set` client (`pendingTransfers`) pour l'état des réservations et des opérations en cours — aucun `localStorage`, `sessionStorage`, ou `indexedDB` (`grep` → 0). États perdus au rechargement.
 - **Authentification** : aucune visible dans le code — consommation anonyme de l'API, aucun token, aucun header d'autorisation.
 - **Routing** : aucun (une page unique)
 
@@ -171,12 +172,12 @@ Réponse JSON est rendue dans le DOM
 ```
 
 **Fichier d'entrée** : `index.html` (ligne 10 : `<script src="js/app.js">`)  
-**Événement déclencheur** : `DOMContentLoaded` (js/app.js, ligne 79)  
-**Fonction déclenchée** : `loadTransfers()` (js/app.js, lignes 8–40)
+**Événement déclencheur** : `DOMContentLoaded` (js/app.js, ligne 89)  
+**Fonction déclenchée** : `loadTransfers()` (js/app.js, lignes 10–42)
 
 ### Secondaire — Rafraîchissement après action
 
-La liste est automatiquement rafraîchie après chaque réservation ou annulation. Les fonctions `reserve()` (ligne 55) et `cancelReservation()` (ligne 72) appellent `loadTransfers()` à la suite de leur action API. Ce mécanisme de rappel n'est plus théorique : il est utilisé par les boutons d'action de la liste.
+La liste est automatiquement rafraîchie après chaque réservation ou annulation. Les fonctions `reserve()` (ligne 59) et `cancelReservation()` (ligne 80) appellent `loadTransfers()` à la suite de leur action API. Ce mécanisme de rappel n'est plus théorique : il est utilisé par les boutons d'action de la liste.
 
 ## Fichiers critiques
 
@@ -214,19 +215,19 @@ La liste est automatiquement rafraîchie après chaque réservation ou annulatio
 
 ## Hotspots et zones critiques
 
-### Hotspot 1 — Couplage implicite avec le schéma API — champ `id` critique (`js/app.js`, lignes 22, 54, 71)
+### Hotspot 1 — Couplage implicite avec le schéma API — champ `id` critique (`js/app.js`, lignes 24, 58, 79)
 
 ```javascript
-const reservationId = reservations.get(t.id);  // ligne 22
-reservations.set(transferId, data.reservationId);  // ligne 54
-reservations.delete(transferId);  // ligne 71
+const reservationId = reservations.get(t.id);  // ligne 24
+reservations.set(transferId, data.reservationId);  // ligne 58
+reservations.delete(transferId);  // ligne 79
 ```
 
 **Risque** : le champ `id` de chaque transfert est utilisé comme clé pour stocker/récupérer les réservations. Son absence, mutation, ou instabilité casse complètement la gestion des réservations (mauvaise correspondance entre UI et état client).
 
 **Priorité** : **CRITIQUE** — le champ `id` doit exister, être unique et stable pour chaque transfert.
 
-### Hotspot 2 — Couplage implicite avec le schéma API — champs d'affichage (`js/app.js`, ligne 20)
+### Hotspot 2 — Couplage implicite avec le schéma API — champs d'affichage (`js/app.js`, ligne 22)
 
 ```javascript
 item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} places)`;
@@ -236,7 +237,7 @@ item.textContent = `${t.from} → ${t.to} — ${t.price} XPF (${t.seatsLeft} pla
 
 **Priorité** : **Moyenne** — fragile à l'évolution de l'API, mais actuellement en phase.
 
-### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 37–39)
+### Hotspot 3 — Gestion des erreurs invasive (`js/app.js`, lignes 39–41)
 
 ```javascript
 } catch (err) {
