@@ -133,12 +133,12 @@ Papeete → Moorea — 3500 XPF (12 places)
 | # | Assertion | Réalité |
 |---|-----------|---------|
 | 1 | Une erreur réseau n'écrase pas la page (pas de crash) | **PASS** — pas de crash |
-| 2 | Un message explicite est affiché à l'utilisateur | **FAIL** — page silencieuse (comportement actuel) |
+| 2 | Un message explicite est affiché à l'utilisateur | **PASS** — message d'erreur visible (SHIA-423) |
 | 3 | La console JavaScript contient un indice d'erreur | **PASS** — erreur dans `fetch()` |
 
-**Note** : Le test FAIL est une **dette technique** documentée. Le comportement actuel accepte le silence en pilote ; production nécessiterait un message.
+**Note** : La gestion des erreurs a été ajoutée par SHIA-423.
 
-**Acceptation** : Pas de crash (assertion 1 passe). Les autres sont des recommandations.
+**Acceptation** : Les 3 assertions passent.
 
 ---
 
@@ -381,18 +381,17 @@ Papeete → Moorea — 3500 XPF (12 places)
 3. Observer
 
 **Comportement actuel** :
-- `response.ok` n'est pas vérifié
-- `response.json()` peut réussir ou rejeter selon le corps
-- Page reste silencieuse
+- `response.ok` est vérifié
+- Les erreurs sont capturées et affichées (depuis SHIA-423)
 
 **Assertions**
 
 | # | Assertion | Réalité |
 |---|-----------|---------|
-| 1 | Pas de crash | **PASS** (probablement) |
-| 2 | Message d'erreur visible | **FAIL** |
+| 1 | Pas de crash | **PASS** |
+| 2 | Message d'erreur visible | **PASS** — Message d'erreur visible à l'utilisateur (SHIA-423) |
 
-**Note** : Comportement attendu pour un pilote ; production exigerait une gestion.
+**Note** : Comportement corrigé par SHIA-423.
 
 ---
 

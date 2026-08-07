@@ -8,7 +8,7 @@ Ce dépôt ne possède aucun modèle de données local : pas d'entité, pas de s
 
 ## Résumé exécutif
 
-`shift-pilot-resa-web` possède un modèle de données minimal : un registre local des réservations. La ressource `transfer` (tableau JSON retourné par `GET /transfers`) est consommée, rendue, et stockée temporairement dans une `Map` locale (`reservations : Map<transferId, reservationId>`). Les cinq champs effectivement lus par `js/app.js` sont `id`, `from`, `to`, `price`, `seatsLeft` (`js/app.js`, lignes 20, 22, 28). Depuis SHIA-354, le champ `id` est critique : il sert de clé pour maintenir l'état applicatif des réservations actives pendant la session utilisateur.
+`shift-pilot-resa-web` possède un modèle de données minimal : un registre local des réservations `Map<transferId, reservationId>`. La ressource `transfer` (tableau JSON retourné par `GET /transfers`) est consommée, rendue, et l'état des réservations actives est maintenu dans une `Map` locale pendant la session utilisateur. Les cinq champs effectivement lus par `js/app.js` sont `id`, `from`, `to`, `price`, `seatsLeft` (`js/app.js`, lignes 20, 22, 28). Depuis SHIA-354, le champ `id` est critique : il sert de clé pour maintenir l'état applicatif des réservations actives pendant la session utilisateur.
 
 **État applicatif** (SHIA-354) :
 - `Map reservations` : maintient en mémoire les réservations actives pendant la session utilisateur (aucune persistance au-delà du rechargement)
@@ -51,7 +51,7 @@ Ces cinq champs sont les seuls utilisés par le code ; l'API peut en renvoyer da
 - **Contrat implicite et non formalisé avec l'API.** Les cinq champs attendus (`id`, `from`, `to`, `price`, `seatsLeft`) ne sont documentés nulle part dans ce dépôt — ni dans `README.md`, ni dans un fichier de types (TypeScript, JSDoc, JSON Schema). Si l'API évolue (renommage d'un champ, changement de type, suppression de `id`), le front casse silencieusement. Localisation : `js/app.js`, lignes 20–22, 28. **Note** : le champ `seatsLeft` est en accord avec l'API depuis SHIAAAAAAAAAAAAAAAAAAAAAAAA-311 ; le champ `id` est critique depuis SHIA-354 (clé de la `Map`).
 - **Pas de validation du type de `id`.** Le champ `id` est supposé être un identifiant unique comparable avec `===` dans la `Map`, mais son type exact est inconnu (nombre entier ? UUID chaîne ?). Aucune garde sur la présence. Depuis SHIA-354, `id` est obligatoire pour la fonctionnalité de réservation. Localisation : `js/app.js`, ligne 22.
 - **Pas de synchronisation multi-utilisateur.** Si deux utilisateurs réservent la dernière place simultanément, le front ne détecte pas le conflit. Aucun mécanisme de versioning, de polling ou de WebSocket pour synchroniser les changements d'autres utilisateurs. Localisation : front entier (responsabilité de l'API).
-- **Aucune gestion de l'état vide.** Un tableau vide renvoyé par l'API (aucun transfert disponible) et une erreur réseau (catch) produisent deux résultats différents depuis SHIA-348 (message d'erreur), mais un tableau vide est silencieux. Localisation : `js/app.js`, lignes 18–40.
+- **Aucune gestion de l'état vide.** Un tableau vide renvoyé par l'API (aucun transfert disponible) et une erreur réseau produisent deux résultats différents depuis SHIA-423 (message d'erreur visible pour erreur réseau), mais un tableau vide reste silencieux. Localisation : `js/app.js`, lignes 18–40.
 
 ## Zones critiques
 
@@ -68,6 +68,7 @@ Ces cinq champs sont les seuls utilisés par le code ; l'API peut en renvoyer da
 - **`HAUT` — Suppression du champ `id` côté API.** Depuis SHIA-354, le champ `id` est obligatoire pour la fonctionnalité de réservation. Une suppression accidentelle côté API rendrait la réservation impossible sans crash manifeste (clés `Map` `undefined`).
 - **`HAUT` — Conflit de réservation simultanée.** Si deux navigateurs réservent la dernière place en même temps, le front de chacun pense avoir réussi (état `Map` cohérent localement), mais l'API ne peut en servir qu'un. Aucune détection de conflit côté front ; synchronisation via rechargement manuel ou polling nécessaire.
 - **`INCONNU` — Forme réelle et contraintes de la ressource `transfer`.** Les types, les valeurs limites et les éventuels champs obligatoires de `transfer` ne sont connus que depuis `shift-pilot-resa-api`. Si ce dépôt évolue (tri, filtre, affichage conditionnel), le développeur devra supposer ou consulter l'autre dépôt.
+- **`HAUT` — Synchronisation multi-utilisateur absente.** Deux utilisateurs peuvent simultanément réserver la dernière place disponible ; le front de l'un recevra une réservation réussie mais l'API ne peut servir qu'une seule réservation.
 
 ## Recommandations priorisées
 
@@ -83,3 +84,4 @@ Ces cinq champs sont les seuls utilisés par le code ; l'API peut en renvoyer da
 - Quels sont les types réels de `price` (nombre entier, décimal, chaîne formatée ?) et `seatsLeft` (entier, peut-il être négatif ?) — non observables depuis ce dépôt, à établir depuis `shift-pilot-resa-api`.
 - L'API renvoie-t-elle d'autres champs (horaires, opérateur, statut de disponibilité) que ce front n'utilise pas ? Si oui, y a-t-il des fonctionnalités à venir qui les exploiteront ?
 - La ressource `transfer` peut-elle être vide (aucun transfert disponible) ou l'API garantit-elle toujours au moins une entrée ?
+- Comment est gérée la synchronisation multi-utilisateur en cas de réservation simultanée de la dernière place disponible ? Aucun mécanisme côté front n'existe pour détecter ce conflit.
