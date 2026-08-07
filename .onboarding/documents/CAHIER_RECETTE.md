@@ -4,15 +4,21 @@ Plan de test — parcours à valider pour accepter le produit.
 
 ## Contexte
 
-Ce cahier de recette couvre l'**unique fonctionnalité** de ce workspace : affichage du catalogue de transferts inter-îles au chargement de la page. Tous les tests sont dérivés du workflow unique documenté dans `WORKFLOW_AFFICHAGE_TRANSFERTS.md`.
+Ce cahier de recette couvre les **trois fonctionnalités principales** de ce workspace (SHIA-354, SHIA-383) :
+1. **Affichage du catalogue** — chargement de la page et affichage des transferts
+2. **Réservation d'une place** — bouton Réserver et appel API POST
+3. **Annulation d'une réservation** — bouton Annuler et appel API DELETE
+
+Tous les tests sont dérivés des workflows documentés dans `CDC_FONCTIONNEL.md`.
 
 **Confiance du cahier** : high — le code est exhaustif, le périmètre est clair.
 
 **Périmètre non testé** (logique métier absente de ce dépôt) :
-- Réservation (pas implémentée ici)
+- Réservation de plusieurs places (limité à 1 seule place)
+- Persistance des réservations au-delà de la session (pas d'implémentation)
+- Synchronisation multi-utilisateur (pas d'implémentation)
 - Filtres, tris, recherche (pas implémentés)
 - Authentification (pas implémentée)
-- Persistance (pas implémentée)
 
 ## Environnement de test
 
@@ -198,6 +204,140 @@ Papeete → Moorea — 3500 XPF (12 places)
 
 ---
 
+## Tests de réservation et annulation
+
+### TC-10 : Réservation d'une place
+
+**Objectif** : Vérifier que l'utilisateur peut réserver une place sur un transfert disponible.
+
+**Contexte** : API renvoie au moins un transfert avec `seatsLeft > 0` et un champ `id`.
+
+**Étapes**
+
+1. Charger la page
+2. Attendre le rendu de la liste
+3. Localiser un transfert avec `seatsLeft > 0`
+4. Cliquer sur le bouton « Réserver »
+5. Attendre le rafraîchissement de la liste
+
+**Assertions**
+
+| # | Assertion | Critère |
+|---|-----------|---------|
+| 1 | Bouton « Réserver » est visible avant action | Visible pour transfert avec `seatsLeft > 0` |
+| 2 | Clic déclenche une requête POST | Visible dans Network tab : `POST /transfers/{id}/reserve` |
+| 3 | Bouton est remplacé par « Annuler » | UI mise à jour après succès |
+| 4 | Nombre de places diminue de 1 | `seatsLeft` diminue après rafraîchissement |
+| 5 | État local est mis à jour | Map `reservations` contient l'entrée `(transferId, reservationId)` |
+| 6 | Pas d'erreur console | Aucun message d'erreur dans DevTools |
+
+**Acceptation** : Les 6 assertions passent.
+
+---
+
+### TC-11 : Annulation d'une réservation
+
+**Objectif** : Vérifier que l'utilisateur peut annuler sa réservation.
+
+**Contexte** : Utilisateur a déjà réservé une place (après TC-10).
+
+**Étapes**
+
+1. Après TC-10, le bouton « Annuler » est visible
+2. Cliquer sur le bouton « Annuler »
+3. Attendre le rafraîchissement de la liste
+
+**Assertions**
+
+| # | Assertion | Critère |
+|---|-----------|---------|
+| 1 | Bouton « Annuler » est visible après réservation | Visible pour transfert réservé |
+| 2 | Clic déclenche une requête DELETE | Visible dans Network tab : `DELETE /transfers/{id}/reservations/{reservationId}` |
+| 3 | Bouton est remplacé par « Réserver » | UI mise à jour après succès |
+| 4 | Nombre de places augmente de 1 | `seatsLeft` augmente après rafraîchissement |
+| 5 | État local est mis à jour | Map `reservations` ne contient plus l'entrée |
+| 6 | Pas d'erreur console | Aucun message d'erreur dans DevTools |
+
+**Acceptation** : Les 6 assertions passent.
+
+---
+
+### TC-12 : Absence du bouton Réserver si complet
+
+**Objectif** : Vérifier que le bouton Réserver ne s'affiche pas quand `seatsLeft === 0`.
+
+**Contexte** : API renvoie un transfert avec `seatsLeft === 0`.
+
+**Étapes**
+
+1. Charger la page
+2. Attendre le rendu de la liste
+3. Localiser un transfert avec `seatsLeft === 0`
+4. Observer la présence/absence de boutons
+
+**Assertions**
+
+| # | Assertion | Critère |
+|---|-----------|---------|
+| 1 | Bouton « Réserver » est absent | Aucun bouton pour transfert avec `seatsLeft === 0` |
+| 2 | Transfert est affiché | Texte du transfert visible, juste pas de bouton |
+| 3 | Texte affiche « 0 places » | Format : `... (0 places)` |
+
+**Acceptation** : Les 3 assertions passent.
+
+---
+
+### TC-13 : Protection anti double-clic (SHIA-383)
+
+**Objectif** : Vérifier que le double-clic rapide sur « Réserver » ou « Annuler » n'entraîne qu'un seul appel API.
+
+**Contexte** : Utilisateur clique rapidement (< 500 ms) deux fois sur le même bouton pendant une opération réseau lente.
+
+**Étapes**
+
+1. Charger la page
+2. Simul une latence réseau (DevTools > Network > Slow 3G)
+3. Double-cliquer rapidement sur un bouton « Réserver » ou « Annuler »
+4. Observer les appels réseau
+
+**Assertions**
+
+| # | Assertion | Critère |
+|---|-----------|---------|
+| 1 | Un seul appel POST/DELETE est effectué | Network tab : une seule requête, pas deux |
+| 2 | Bouton reste désactivé pendant l'opération | Pas de réactivité aux clics supplémentaires |
+| 3 | État final est cohérent | Pas de doublon de réservation, pas d'annulation double |
+
+**Acceptation** : Les 3 assertions passent. Démontre que `pendingTransfers` (Set) fonctionne correctement.
+
+---
+
+### TC-14 : Gestion d'erreur lors de la réservation (SHIA-423)
+
+**Objectif** : Vérifier que les erreurs de réservation/annulation sont affichées à l'utilisateur.
+
+**Contexte** : API retourne une erreur (4xx ou 5xx) ou est injoignable.
+
+**Étapes**
+
+1. Configurer l'API pour retourner une erreur 400 ou 500 sur `/reserve` ou `/reservations/{id}`
+2. Charger la page
+3. Cliquer sur « Réserver » ou « Annuler »
+4. Observer l'affichage
+
+**Assertions**
+
+| # | Assertion | Critère |
+|---|-----------|---------|
+| 1 | Message d'erreur s'affiche dans `<p id="transfers-error">` | Texte d'erreur visible, ex. : « Impossible de réserver : Erreur serveur : 500 » |
+| 2 | Bouton reste visible et peut être recliqué | Utilisateur peut réessayer après correction |
+| 3 | Liste n'est pas rafraîchie | Pas de changement d'UI si l'API échoue |
+| 4 | Transfert est déverrouillé | `pendingTransfers` est vidé même en cas d'erreur |
+
+**Acceptation** : Les 4 assertions passent.
+
+---
+
 ## Test d'intégration
 
 ### TC-06 : Cycle complet en environnement de staging
@@ -315,6 +455,11 @@ Papeete → Moorea — 3500 XPF (12 places)
 | TC-03 (Erreur réseau) | — | ✓ | — | Pas de crash (PASS), message absent (attendu) |
 | TC-04 (Liste vide) | — | ✓ | — | Pas de crash (PASS), message absent (attendu) |
 | TC-05 (Champ manquant) | — | ✓ | — | Pas de crash (PASS), affichage dégradé (attendu) |
+| TC-10 (Réservation) | ✓ | — | — | **À tester** |
+| TC-11 (Annulation) | ✓ | — | — | **À tester** |
+| TC-12 (Complet) | ✓ | — | — | **À tester** |
+| TC-13 (Anti-double-clic) | — | ✓ | — | **À tester** (SHIA-383) |
+| TC-14 (Erreur réservation) | — | ✓ | — | **À tester** (SHIA-423) |
 | TC-06 (Staging) | — | — | ✓ | **À tester en staging** |
 | TC-07 (HTTP 500) | — | ✓ | — | Pas de crash (PASS), message absent (attendu) |
 | TC-08 (Format inattendu) | — | ✓ | — | Crash en console (bug documenté) |
@@ -322,23 +467,26 @@ Papeete → Moorea — 3500 XPF (12 places)
 
 ## Recommandations pour améliorer la testabilité
 
-1. **Ajouter des messages d'erreur** : l'utilisateur ne peut pas distinguer « pas de transferts » d'« erreur API »
-2. **Documenter le contrat API** : quels champs sont obligatoires ? Quels types exacts ?
-3. **Ajouter des tests unitaires/intégrés** : aucun test n'existe actuellement (pas de répertoire `test/`, pas de script `npm test`)
-4. **Valider les données** : `Array.isArray(transfers)`, vérifier les champs obligatoires
+1. **Documenter le contrat API** : quels sont les types exacts de `id` et `reservationId` ? Quels champs sont obligatoires ?
+2. **Ajouter des tests unitaires/intégrés** : aucun test n'existe actuellement (pas de répertoire `test/`, pas de script `npm test`)
+3. **Valider les données** : `Array.isArray(transfers)`, vérifier la présence et le type de `id`, valider `reservationId` retourné par l'API
+4. **Améliorer la gestion d'erreur** : l'utilisateur ne peut pas distinguer « pas de transferts » d'« erreur API » (cas nominal accepté en pilote, à revoir en production)
 
 ## Régressions à surveiller
 
 Avant toute modification du code, tester :
 
-1. **Aucune modification d'`index.html`** : vérifier que l'id `transfers-list` et le titre restent inchangés
-2. **Aucune modification de l'URL API** : vérifier que l'appel cible toujours `${API_BASE_URL}/transfers`
+1. **Aucune modification d'`index.html`** : vérifier que les ids `transfers-list` et `transfers-error` restent inchangés, que le titre reste
+2. **Aucune modification de l'URL API** : vérifier que l'appel cible toujours `${API_BASE_URL}/transfers`, `${API_BASE_URL}/transfers/{id}/reserve`, `${API_BASE_URL}/transfers/{id}/reservations/{reservationId}`
 3. **Aucune modification de la structure des `<li>`** : vérifier que le format reste `[from] → [to] — [price] XPF ([seatsLeft] places)` — suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311
-4. **Aucune modification de la police d'injection de `window.API_BASE_URL`** : documenter tout changement
+4. **Aucune modification de la Map `reservations` ou du Set `pendingTransfers`** : vérifier que le registre local et la protection anti-double-clic restent
+5. **Aucune modification de la police d'injection de `window.API_BASE_URL`** : documenter tout changement
+6. **Vérifier que les boutons « Réserver » et « Annuler » s'affichent correctement** selon la logique : Réserver si `seatsLeft > 0` et pas réservé, Annuler si réservé
+7. **Vérifier que les messages d'erreur s'affichent dans `<p id="transfers-error">`** (SHIA-423)
 
 ## Preuves et traçabilité
 
-Tous les tests sont dérivés du workflow unique `WORKFLOW_AFFICHAGE_TRANSFERTS.md`, lui-même extrait des audits :
+Les tests TC-10 à TC-14 (réservation, annulation, complet, anti-double-clic, erreur) sont nouveaux (SHIA-354, SHIA-383, SHIA-423) et couvrent les trois fonctionnalités principales du produit. Tous les tests sont dérivés des workflows documentés dans `CDC_FONCTIONNEL.md`, lui-même extrait des audits :
 - FUNCTIONAL_AUDIT.md
 - SECURITY_ROBUSTNESS_AUDIT.md
 - CODE_HOTSPOTS_AUDIT.md
