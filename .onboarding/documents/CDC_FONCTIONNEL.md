@@ -10,10 +10,7 @@ Les voyageurs en Polynésie française ont besoin de connaître les **transferts
 
 ### Périmètre fonctionnel et écart déclaré
 
-Le `README.md` annonce une « **interface de réservation** de transferts inter-îles ». Le code réalisé implémente désormais le **catalogue en consultation avec réservation et annulation** (SHIA-354). L'utilisateur peut consulter les transferts disponibles, réserver une place sur un transfert, et annuler sa réservation. Les réservations sont maintenues localement pendant la session utilisateur (pas de persistance au-delà du rechargement). Les trois fonctionnalités principales sont :
-1. **Affichage du catalogue** — chargement et affichage des transferts disponibles
-2. **Réservation d'une place** — réservation et appel API POST `/transfers/{id}/reserve`
-3. **Annulation d'une réservation** — annulation et appel API DELETE `/transfers/{id}/reservations/{reservationId}`
+Le `README.md` annonce une « **interface de réservation** de transferts inter-îles ». Le code réalisé implémente désormais le **catalogue en consultation avec réservation et annulation** (SHIA-354). L'utilisateur peut consulter les transferts disponibles, réserver une place sur un transfert, et annuler sa réservation. Les réservations sont maintenues localement pendant la session utilisateur (pas de persistance au-delà du rechargement).
 
 ## Acteurs et capacités
 
@@ -364,7 +361,7 @@ L'utilisateur clique sur le bouton « Annuler » d'un transfert qu'il a réserv�
 
 Tous les constats fonctionnels sont issus de lectures exhaustives :
 
-- `js/app.js` : 91 lignes, entièrement lues (incluant les workflows Réservation et Annulation SHIA-354, protection anti double-clic SHIA-383, gestion d'erreur SHIA-423)
+- `js/app.js` : 91 lignes, entièrement lues (incluant les workflows Réservation et Annulation SHIA-354, protection anti double-clic SHIA-383)
 - `index.html` : 14 lignes, entièrement lues
 - `README.md` : 8 lignes, entièrement lues
 - Aucune autre source de code fonctionnel dans ce dépôt
