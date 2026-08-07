@@ -64,7 +64,7 @@ Chargement de la page `index.html` dans un navigateur web, ou appel à `loadTran
 #### Étapes
 
 1. **Chargement du DOM**  
-   Le navigateur charge et analyse `index.html` — le titre `<h1>Transferts</h1>`, le conteneur `<ul id="transfers-list">` et `<p id="transfers-error">` (vides) sont rendus. Le script `js/app.js` est chargé (`<script type="module" src="js/app.js">`).
+   Le navigateur charge et analyse `index.html` — le titre `<h1>Transferts</h1>` et le conteneur `<ul id="transfers-list">` (vide) sont rendus. Le script `js/app.js` est chargé (`<script type="module" src="js/app.js">`). Il n'y a pas d'élément `<p id="transfers-error">` dans le HTML.
 
 2. **Résolution de l'URL de l'API**  
    Au chargement de `js/app.js`, la variable `API_BASE_URL` est résolue :
@@ -97,7 +97,7 @@ Chargement de la page `index.html` dans un navigateur web, ou appel à `loadTran
    - La réponse est vérifiée (`response.ok`) avant désérialisation
 
 6. **Réinitialisation du conteneur**  
-   La `<ul id="transfers-list">` et `<p id="transfers-error">` sont vidées.
+   La `<ul id="transfers-list">` est vidée : `list.innerHTML = ""`.
 
 7. **Rendu de chaque transfert avec boutons d'action**  
    Pour chaque transfert `t` du tableau :
@@ -192,8 +192,8 @@ L'utilisateur clique sur le bouton « Réserver » d'un transfert avec `seatsLef
 
 #### Cas de bord
 
-- **Erreur réseau** : Un message d'erreur s'affiche dans `<p id="transfers-error">` (ajouté par SHIA-423). Le bouton Réserver reste visible et peut être recliqué après correction.
-- **Réservation impossible (transfert complet)** : L'API retourne une erreur 4xx ou 5xx. Le message d'erreur s'affiche, le bouton reste visible.
+- **Erreur réseau / API** : Le contenu de `<ul id="transfers-list">` est remplacé par le message d'erreur — `list.textContent = "Impossible de réserver : ..."` (`js/app.js:61`) — effaçant la liste et tous les boutons. L'utilisateur doit recharger la page pour retrouver la liste. Le transfert est déverrouillé dans le bloc `finally` (`js/app.js:63`).
+- **Réservation impossible (transfert complet)** : L'API retourne 409. Le comportement est identique au cas d'erreur réseau : la liste est effacée et remplacée par le message d'erreur.
 
 #### Règles métier
 
@@ -252,8 +252,8 @@ L'utilisateur clique sur le bouton « Annuler » d'un transfert qu'il a réserv�
 
 #### Cas de bord
 
-- **Erreur réseau** : Un message d'erreur s'affiche dans `<p id="transfers-error">` (ajouté par SHIA-423). Le bouton Annuler reste visible et peut être recliqué après correction.
-- **Annulation impossible** : L'API retourne une erreur 4xx ou 5xx (ex. : réservation déjà annulée). Le message d'erreur s'affiche, le bouton peut rester ou disparaître selon l'erreur.
+- **Erreur réseau / API** : Le contenu de `<ul id="transfers-list">` est remplacé par le message d'erreur — `list.textContent = "Impossible d'annuler : ..."` (`js/app.js:82`) — effaçant la liste et tous les boutons. Le transfert est déverrouillé dans le bloc `finally` (`js/app.js:84`). L'utilisateur doit recharger la page pour retrouver la liste et les boutons.
+- **Annulation impossible** : L'API retourne une erreur 4xx ou 5xx (ex. : réservation déjà annulée). Le comportement est identique au cas d'erreur réseau : la liste disparaît, remplacée par le message d'erreur.
 
 #### Règles métier
 

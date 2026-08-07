@@ -329,12 +329,11 @@ Papeete → Moorea — 3500 XPF (12 places)
 
 | # | Assertion | Critère |
 |---|-----------|---------|
-| 1 | Message d'erreur s'affiche dans `<p id="transfers-error">` | Texte d'erreur visible, ex. : « Impossible de réserver : Erreur serveur : 500 » |
-| 2 | Bouton reste visible et peut être recliqué | Utilisateur peut réessayer après correction |
-| 3 | Liste n'est pas rafraîchie | Pas de changement d'UI si l'API échoue |
-| 4 | Transfert est déverrouillé | `pendingTransfers` est vidé même en cas d'erreur |
+| 1 | Message d'erreur remplace le contenu de `<ul id="transfers-list">` | Texte d'erreur visible à la place de la liste, ex. : « Impossible de réserver : Erreur serveur : 500 » |
+| 2 | Liste et boutons effacés par le message d'erreur | La liste disparaît — l'utilisateur doit recharger la page (`list.textContent = "..."`, `js/app.js:61`) |
+| 3 | Transfert est déverrouillé | `pendingTransfers` est vidé même en cas d'erreur (bloc `finally`, `js/app.js:63`) |
 
-**Acceptation** : Les 4 assertions passent.
+**Acceptation** : Les 3 assertions passent.
 
 ---
 
@@ -476,13 +475,13 @@ Papeete → Moorea — 3500 XPF (12 places)
 
 Avant toute modification du code, tester :
 
-1. **Aucune modification d'`index.html`** : vérifier que les ids `transfers-list` et `transfers-error` restent inchangés, que le titre reste
+1. **Aucune modification d'`index.html`** : vérifier que l'id `transfers-list` reste inchangé, que le titre reste
 2. **Aucune modification de l'URL API** : vérifier que l'appel cible toujours `${API_BASE_URL}/transfers`, `${API_BASE_URL}/transfers/{id}/reserve`, `${API_BASE_URL}/transfers/{id}/reservations/{reservationId}`
 3. **Aucune modification de la structure des `<li>`** : vérifier que le format reste `[from] → [to] — [price] XPF ([seatsLeft] places)` — suite correctif SHIAAAAAAAAAAAAAAAAAAAAAAAA-311
 4. **Aucune modification de la Map `reservations` ou du Set `pendingTransfers`** : vérifier que le registre local et la protection anti-double-clic restent
 5. **Aucune modification de la police d'injection de `window.API_BASE_URL`** : documenter tout changement
 6. **Vérifier que les boutons « Réserver » et « Annuler » s'affichent correctement** selon la logique : Réserver si `seatsLeft > 0` et pas réservé, Annuler si réservé
-7. **Vérifier que les messages d'erreur s'affichent dans `<p id="transfers-error">`** (SHIA-423)
+7. **Vérifier que les messages d'erreur remplacent le contenu de `<ul id="transfers-list">`** — la liste disparaît, remplacée par le texte d'erreur (`list.textContent = "..."`, `js/app.js:40,61,82`)
 
 ## Preuves et traçabilité
 
