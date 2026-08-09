@@ -1,41 +1,45 @@
 # Relecture — FUNCTIONAL_AUDIT.md
 
+> Mise à jour SHIA-572. La version précédente de cette relecture portait sur un front sans réservation (grep `reserv` → 0 résultat). Elle est intégralement remplacée par la relecture de l'audit réconcilié.
+
 ## Verdict global
 
-**Bon** — L'audit est exploitable sans réserve bloquante. Le constat d'absence de réservation est prouvé par grep, les statuts sont correctement appliqués, les citations de lignes sont exactes. Une omission mineure (garde `typeof document` à la ligne 18) déjà signalée dans la relecture du workflow n'est pas un défaut bloquant dans un audit fonctionnel.
+**Bon** — L'audit réconcilié est exploitable sans réserve bloquante. Les corrections demandées (limiter « fonctionnalités complètes » à « implémentées dans le front », conditionner les risques de réconciliation et de perte de contexte au contrat API) ont été appliquées. Les constats structurels directs restent `VÉRIFIÉ_CODE` avec citations exactes.
 
-## Problèmes bloquants
+## Corrections appliquées (SHIA-572, passage 2)
 
-Aucun.
-
-## Problèmes mineurs
-
-**Garde `if (typeof document !== "undefined")` (ligne 18) non mentionnée dans la description du déclenchement.**
-- Section concernée : « Au chargement de la page, `loadTransfers()` est déclenchée (`js/app.js`, ligne 19) »
-- Réalité : le `document.addEventListener` à la ligne 19 est conditionnel à la garde de la ligne 18. La citation de la ligne 19 est exacte, mais la garde est omise.
-- Impact : la description du point d'entrée est incomplète. Non bloquant pour la compréhension fonctionnelle, ce pattern est déjà signalé dans `RELECTURE_WORKFLOW_AFFICHAGE_TRANSFERTS.md`. L'auditeur peut en prendre note pour ses futurs livrables.
+- **Compréhension globale et résumé** : « trois fonctionnalités complètes » remplacé par « trois fonctionnalités implémentées dans le front ». La qualification de testées est précisée : « en isolation (fonctions appelées directement sans navigateur réel ni API réelle) ».
+- **Gestion d'erreur visible** : caveat ajouté — la visibilité de l'erreur est conditionnelle à la présence du nœud DOM `#transfers-list`.
+- **Risque de réconciliation session** : requalifié de `VÉRIFIÉ_CODE` à `HYPOTHÈSE`, conditionné explicitement au contrat API (non observable depuis ce dépôt).
+- **Risque de perte de contexte après erreur secondaire** : le côté front reste `VÉRIFIÉ_CODE` ; le fait que la réservation ait eu lieu côté API est qualifié `HYPOTHÈSE`.
 
 ## Points vérifiés et corrects
 
-**1. Fonctionnalité implémentée — prouvée.**
-`loadTransfers()` définie à `js/app.js:5`, accès aux quatre champs `t.from`, `t.to`, `t.price`, `t.availableSeats` à `js/app.js:13`, rendu dans `<ul id="transfers-list">` de `index.html:9`. Vérifié. ✓
+**1. Fonctionnalité 1 — affichage du catalogue — `VÉRIFIÉ_CODE` exact.**
+`DOMContentLoaded` → `loadTransfers()` (ligne 89). `GET /transfers`, itération, `<li>` par transfert (`js/app.js:22`). ✓
 
-**2. Absence de réservation — prouvée par `VÉRIFIÉ_CODE`.**
-L'audit déclare un grep sur `reserv`, `booking`, `panier`, `cart`, `book`, `order`, `commande` → 0 résultat. Sur un dépôt de 20 lignes de JS + 12 lignes de HTML, l'absence est vérifiable exhaustivement. ✓
+**2. Fonctionnalité 2 — réservation — `VÉRIFIÉ_CODE` exact.**
+Bouton Réserver si `seatsLeft > 0` et pas de réservation active (lignes 30–34). `reserve()` : garde (ligne 45), POST (lignes 49–53), stockage `reservationId` (ligne 58), rafraîchissement (ligne 59). ✓
 
-**3. Écart README / code — correctement qualifié.**
-Citation `README.md:3` (« interface de réservation de transferts inter-îles ») confrontée au code existant : légitimement `VÉRIFIÉ_CODE`. L'hypothèse sur la réservation prévue (« dans ce dépôt / dans l'API / dans un troisième dépôt ») est correctement qualifiée `HYPOTHÈSE`. ✓
+**3. Fonctionnalité 3 — annulation — `VÉRIFIÉ_CODE` exact.**
+Bouton Annuler si réservation active (lignes 25–29). `cancelReservation()` : garde (ligne 68), DELETE (lignes 72–75), suppression (ligne 79), rafraîchissement (ligne 80). ✓
 
-**4. États limites identifiés et sourcés.**
-- Absence d'état de chargement : `js/app.js:6-15`, `<ul>` vide sans indicateur. Vérifié. ✓
-- Absence d'état d'erreur : pas de `try/catch`, pas de garde `response.ok`. `js/app.js:6-7`. Vérifié. ✓
-- Absence d'état vide explicite : boucle `for...of` à zéro itération → `<ul>` vide sans message. `js/app.js:11-15`. Vérifié. ✓
+**4. Verrou anti double-clic — `VÉRIFIÉ_CODE` exact.**
+`reservations.has || pendingTransfers.has` (ligne 45) et `pendingTransfers.has` (ligne 68). Trois tests dans `js/app.test.js` (lignes 249–310). ✓
 
-**5. XPF codé en dur — `VÉRIFIÉ_CODE` exact.**
-`js/app.js:13` : `${t.price} XPF`. Vérifié. ✓
+**5. Gestion d'erreur visible — conditionnelle à la présence du DOM.**
+`list.textContent` dans les trois `catch` (lignes 40, 61, 82). Correctement conditionné à la présence du nœud. ✓
 
-**6. Aucun secret recopié.** ✓
+**6. Lacunes correctement identifiées — `VÉRIFIÉ_CODE` exact.**
+Pas d'indicateur de chargement, pas de message liste vide, réservations session-locales. ✓
+
+**7. Risques correctement qualifiés.**
+- Réconciliation après rechargement : `HYPOTHÈSE` — conditionnel au contrat API. ✓
+- Conflit simultané : `HYPOTHÈSE` (inchangé). ✓
+- Perte de contexte post-reserve : côté front `VÉRIFIÉ_CODE`, côté API `HYPOTHÈSE`. ✓
+
+**8. Aucun secret recopié.** ✓
 
 ## Recommandations de correction
 
-Aucune correction requise. La mention de la garde ligne 18 serait un raffinement bienvenu mais non bloquant.
+Aucune correction requise.

@@ -30,7 +30,7 @@ Le `README.md` annonce une « **interface de réservation** de transferts inter-
 - **Protocole** : HTTP GET, réponse JSON — tableau de transferts
 - **Champs** : au minimum `id`, `from`, `to`, `price`, `seatsLeft` ; probablement d'autres champs non affichés
 - **Contrat** : les 5 champs affichés/utilisés sont directement accédés sans validation — tout changement de nom ou de type côté API produirait un `undefined` côté front
-- **Authentification** : aucune observable — consommation anonyme ou token injecté par la page hôte
+- **Authentification** : aucun mécanisme d'authentification observable dans ce client
 
 **Endpoint 2 : Réservation**
 - **URL** : `POST /transfers/{id}/reserve`
@@ -43,7 +43,7 @@ Le `README.md` annonce une « **interface de réservation** de transferts inter-
 **Endpoint 3 : Annulation**
 - **URL** : `DELETE /transfers/{id}/reservations/{reservationId}`
 - **Paramètres** : `{id}` = transferId, `{reservationId}` = identifiant de la réservation à supprimer
-- **Réponse observée** : statut 2xx (204 ou 200 avec corps vide)
+- **Réponse acceptée** : tout statut 2xx ; corps non lu ; forme serveur inconnue
 - **Comportement côté frontend** : envoie DELETE, supprime `reservationId` de la Map locale, rafraîchit la liste
 - **Comportement côté serveur** (`INCONNU` depuis ce dépôt) : le `seatsLeft` augmente-t-il ? Voir documentation `shift-pilot-resa-api`
 
@@ -260,7 +260,7 @@ Clic sur le bouton « Annuler » associé à un transfert dont une réservation 
    ```
    - DELETE vers `/transfers/{transferId}/reservations/{reservationId}`
    - Pas de corps de requête
-   - Statut attendu : 204 ou 200 avec corps vide
+   - Statut accepté : tout 2xx ; corps non lu
 
 6. **Suppression de l'état local**  
    ```javascript
@@ -375,7 +375,7 @@ Clic sur le bouton « Annuler » associé à un transfert dont une réservation 
 - **Synchronisation multi-utilisateur** : pas de détection de conflits si deux utilisateurs réservent la même place
 - **Filtres, tris, recherche** : aucun mécanisme
 - **Détail d'un transfert** : pas de page de détail
-- **Authentification** : pas de login, consommation anonyme supposée
+- **Authentification** : aucun mécanisme observable dans ce client ; forme du service côté serveur inconnue
 - **Localisation / multilingue** : interface en français, devise en XPF, non configurable
 - **État de chargement** : pas de spinner ni message "Chargement..."
 - **Accessibilité** : pas de considération WCAG documentée

@@ -99,42 +99,42 @@ Les plages de valeurs (`id: 1..3`, `price: 1800 | 3500 | 21000`, `seatsLeft: 0..
 
 ## Risques et divergences (blocages et questions)
 
-### Risque 1 : Divergence de noms de champs (RÉSOLU — SHIAAAAAAAAAAAAAAAAAAAAAAAA-311, PR #4, commit b6910ec)
+### Risque 1 : Dépendance ferme au champ `seatsLeft` (STATUT : OBSERVABLE)
 
-**Le problème (antérieur)** :
-- Frontend attendait un champ `availableSeats` pour affichage dans le template
-- Code observé : ancien code frontend `js/app.js:13` référençait `t.availableSeats`
-- Résultat observé : frontend affichait `undefined places` au lieu du nombre réel
+**Ce que le frontend exige** :
+- Frontend accède au champ `seatsLeft` retourné par GET /transfers pour affichage du nombre de places (`js/app.js:23-24`)
+- Condition `seatsLeft > 0` détermine si le bouton « Réserver » est actif ou désactivé (ligne 73-74)
+- Type et bornes du champ : observables uniquement en runtime (API dépôt `shift-pilot-resa-api`)
 
-**Correction appliquée (commit b6910ec)** :
-- Frontend (`js/app.js:13`) : template mis à jour pour utiliser **`${t.seatsLeft} places`**
-- Frontend harmonisé : le code référence maintenant le champ `seatsLeft` reçu de l'API
-- Test de régression : test couvrant ce champ ajouté dans la suite automatisée
-
-**Impact de la correction** :
-- Catalogue désormais affichable correctement — affichage du nombre de places présentes dans la réponse API
-- Dépendance de contrat clarifiée : le frontend consomme le champ `seatsLeft` retourné par GET /transfers
-
-### Risque 2 : Configuration CORS (CRITIQUE POUR DÉPLOIEMENT MULTI-DOMAINE)
-
-**Le problème** :
-- Si API et frontend déployés sur domaines/ports différents, le navigateur applique la CORS policy
-- Frontend sur domaine/port différent (ex. localhost:3000 vs localhost:3100 en dev) peut rencontrer des blocages CORS côté client
-- Comportement en dev actuel : non observé ; ne peut pas être déterminé depuis ce dépôt seul
-
-**Preuve disponible** :
-- Frontend (`js/app.js:13`) : émet `fetch(\`${API_BASE_URL}/transfers\`)`
-- Si API_BASE_URL pointe vers une origine différente, le navigateur imposera la vérification CORS
-- Configuration API (présence/absence de headers CORS, politique de cross-origin) : **non observable depuis ce dépôt**
-
-**Impact potentiel en production** :
-- Si API et frontend déployés sur origines différentes → comportement dépend des headers HTTP exposés par l'API
-- Frontend affiche un message d'erreur : « Impossible de charger les transferts : ... » (capture d'erreur, ligne 40)
+**Preuve** :
+- Fixtures de test (`js/app.test.js`) mockent des transferts avec `seatsLeft` variant de 0 à 28
+- Contrat API implicite : GET /transfers doit toujours retourner ce champ pour chaque transfert
+- Absence du champ ou type inattendu : comportement non spécifié (probablement affichage NaN ou erreur d'affichage)
 
 **Recommandation** :
-- Avant déploiement multi-domaine, tester l'intégration avec frontend et API sur domaines/ports différents
-- Valider que les appels fetch réussissent et affichent les données correctement
-- Si appels bloqués, consulter la documentation ou le comportement en runtime de l'API pour déterminer si CORS doit être activé
+- S'assurer que l'API expose systématiquement `seatsLeft` dans la réponse GET /transfers
+- Si le champ change de nom ou disparaît, le frontend cessera d'afficher les places correctement
+
+### Risque 2 : Vulnérabilité CORS cross-origin (À VÉRIFIER EN PRODUCTION)
+
+**Le problème** :
+- Frontend émet fetch() vers `${API_BASE_URL}/transfers` sans headers de crédibilité (lignes 19-20)
+- Si API et frontend déployés sur origines différentes (domaines ou ports), le navigateur applique la policy CORS
+- Configuration API (présence/absence de header `Access-Control-Allow-Origin`, politique cross-origin) : **INCONNUE depuis ce dépôt**
+
+**Preuve disponible côté frontend** :
+- Frontend émet `fetch(\`${API_BASE_URL}/transfers\`)` — requête cross-origin possible selon valeur de `API_BASE_URL`
+- Gestion d'erreur réseau (ligne 40) : capture les erreurs réseau et affiche un message générique
+- Aucune gestion spécifique de l'erreur CORS côté frontend
+
+**Cas critique** :
+- Déploiement multi-domaine (API sur origin A, frontend sur origin B) sans CORS configuré → fetch() bloqué par navigateur
+- Symptôme : « Impossible de charger les transferts : ... » (message d'erreur réseau)
+
+**Recommandation** :
+- Avant déploiement en production ou multi-domaine, tester fetch() cross-origin entre frontend et API
+- Vérifier que l'API expose le header `Access-Control-Allow-Origin` approprié (tous domaines, ou domaine spécifique du frontend)
+- Si appels cross-origin échouent, consulter la configuration API pour activer CORS
 
 ### Risque 3 : Validation de `seats` côté API (DÉPENDANCE EXTERNE)
 

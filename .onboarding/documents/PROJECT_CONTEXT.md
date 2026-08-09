@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT — shift-pilot-resa-web
 
 > **Statut** : pilote de test (opérationnel)  
-> **Confiance globale** : high  
+> **Confiance globale** : medium  
 > **Taille de codebase** : très réduit (4 fichiers versionnés utiles : HTML + JS exécutable + tests + README ; `js/app.js` contient 90 lignes totales incluant logique métier, exports et structure ; 13 tests automatisés dans `js/app.test.js` couvrant les trois workflows clés)
 
 ## Nature et périmètre
@@ -34,8 +34,8 @@ Deux domaines opérationnels, tous deux de confiance documentée :
 ## Contexte client
 
 - **Région** : Polynésie française (devise XPF, liaisons inter-îles)
-- **Cas d'usage** : consultation de catalogue sans interaction utilisateur — l'affichage est automatique au chargement de la page
-- **Public** : voyageurs cherchant à connaître les transferts disponibles et leurs tarifs
+- **Cas d'usage** : consultation de catalogue avec réservation optionnelle — l'affichage de la liste est automatique au chargement de la page ; l'utilisateur peut choisir de réserver ou annuler une place via des boutons intégrés (SHIA-354)
+- **Public** : voyageurs cherchant à connaître les transferts disponibles et leurs tarifs, avec possibilité de réservation immédiate
 
 ## Points d'attention
 
@@ -75,11 +75,11 @@ Cet état ultra-minimal est cohérent avec le statut pilote. Toute extension (fi
 
 ## Preuves et confiance
 
-- **Confiance globale : high**
-  - **High** sur la portée réelle du code : les 4 fichiers versionnés (README, HTML, JS exécutable, tests) ont été ouverts en entier — aucune « boîte noire », lecture exhaustive. 13 tests automatisés dans `js/app.test.js` validant le code.
-  - **High** sur les workflows : réservation et annulation sont implémentées et testées en isolation (SHIA-354 ; couverture du code et logique métier documentée dans les workflows).
-  - **Medium** sur la forme réelle de l'API distante : seuls les 5 champs consommés et leurs comportements après réservation/annulation sont observables ; d'autres champs ou contraintes peuvent exister côté serveur.
-  - **Medium** sur le contexte de déploiement : mécanisme d'injection de configuration non versionné, comportement en production repose sur un savoir externe.
+- **Confiance globale : medium**
+  - **High** sur la portée réelle du code : les 4 fichiers versionnés (README, HTML, JS exécutable, tests) ont été ouverts en entier — aucune « boîte noire », lecture exhaustive. 13 tests automatisés dans `js/app.test.js` validant le code en isolation.
+  - **High** sur les workflows frontend : réservation et annulation sont implémentées et testées en isolation (SHIA-354 ; couverture du code et logique métier documentée dans les workflows). Protections contre double-clic (SHIA-383) vérifiées en code.
+  - **Low** sur la forme réelle de l'API distante : seuls les 5 champs consommés (`id`, `from`, `to`, `price`, `seatsLeft`) et les trois endpoints (GET, POST, DELETE) sont observables côté frontend. Les comportements après réservation/annulation (décrément/réaugmentation de `seatsLeft`, validation de `seats`, persistance) restent **INCONNUS** depuis ce dépôt — voir documentation `shift-pilot-resa-api`.
+  - **Low** sur l'intégration en production : mécanisme d'injection de `window.API_BASE_URL` non versionné dans ce dépôt. Comportement cross-origin (CORS) dépend de la configuration API. Les tests actuels (mock) ne couvrent pas une API réelle ou multi-domaine.
 
 - **Documents de référence amont**  
   Tous les constats ci-dessus sont issus de :

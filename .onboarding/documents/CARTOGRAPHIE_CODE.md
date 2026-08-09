@@ -126,8 +126,8 @@ const response = await fetch(
 - **Endpoints consommés** :
   - `GET /transfers` : retourne tableau JSON de transferts. Champs observables (consommés par le frontend) : `id`, `from`, `to`, `price`, `seatsLeft`. D'autres champs peuvent être présents côté API mais ne sont pas consommés par ce frontend.
   - `POST /transfers/{transferId}/reserve` : réserve une place. Requête : body JSON `{ seats: 1 }`. Réponse attendue par le frontend : JSON contenant le champ `reservationId` (utilisé pour l'annulation). Contrat distant exact et comportement serveur (décrément de `seatsLeft`, validation de `seats >= 1`, persistance) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`.
-  - `DELETE /transfers/{transferId}/reservations/{reservationId}` : annule une réservation. Réponse attendue par le frontend : statut 2xx (204 ou 200 avec corps vide). Comportement serveur (réaugmentation de `seatsLeft`) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`.
-- Pas d'authentification visible
+  - `DELETE /transfers/{transferId}/reservations/{reservationId}` : annule une réservation. Réponse acceptée par le frontend : tout statut 2xx ; corps non lu ; forme serveur inconnue. Comportement serveur (réaugmentation de `seatsLeft`) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`.
+- Aucun mécanisme d'authentification observable dans ce client (pas de token, pas de header d'autorisation)
 - Pas de header personnalisé au-delà de `Content-Type: application/json` pour POST
 - Pas de gestion du timeout
 - Pas de retry
@@ -145,7 +145,7 @@ const response = await fetch(
 Les domaines suivants sont utilisés dans ce dépôt mais avec une portée limitée :
 
 - **Persistance locale** : `Map` client (`reservations`) et `Set` client (`pendingTransfers`) pour l'état des réservations et des opérations en cours — aucun `localStorage`, `sessionStorage`, ou `indexedDB` (`grep` → 0). États perdus au rechargement.
-- **Authentification** : aucune visible dans le code — consommation anonyme de l'API, aucun token, aucun header d'autorisation.
+- **Authentification** : aucun mécanisme d'authentification observable dans ce client (pas de token, pas de header d'autorisation). Forme du service côté serveur inconnue.
 - **Routing** : aucun (une page unique)
 
 ## Points d'entrée
@@ -295,7 +295,7 @@ Aucun état local n'est persisté — tout est jetable après rendu.
 
 - **XSS** : Utilisé `textContent` (pas `innerHTML`) → données API ne peuvent pas s'exécuter
 - **Secrets** : aucun (grep sur `key|token|secret|password` → 0)
-- **Authentification** : aucune requise pour ce front — API consommée anonymement
+- **Authentification** : aucun mécanisme observable dans ce client ; forme côté API inconnue
 - **CORS** : politiques entièrement côté `shift-pilot-resa-api` — non vérifiable ici
 
 ### Performance

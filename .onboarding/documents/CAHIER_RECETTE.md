@@ -157,17 +157,17 @@ Papeete → Moorea — 3500 XPF (12 places)
 
 **Comportement actuel** :
 - La `<ul>` reste vide
-- Aucun message visible
+- Aucun message visible — utilisateur ne sait pas si c'est une absence légitime ou une erreur API
 
 **Assertions**
 
 | # | Assertion | Réalité |
 |---|-----------|---------|
 | 1 | Pas de crash, pas d'erreur JavaScript | **PASS** |
-| 2 | Un message « Aucun transfert disponible » est affiché | **FAIL** — non implémenté |
-| 3 | L'interface ne laisse pas penser qu'il y a un problème | **FAIL** — indéterminable : erreur ou absence légitime ? |
+| 2 | Un message « Aucun transfert disponible » serait utile pour distinguer absence vs erreur | **FAIL** — non implémenté, mais recommandé pour UX |
+| 3 | Erreur réseau/HTTP affiche un message d'erreur visible | **PASS** — message « Impossible de charger les transferts : [détail] » affichée (SHIA-348) |
 
-**Acceptation** : Pas de crash (assertion 1 passe). Les autres sont des recommandations.
+**Acceptation** : Pas de crash (assertion 1 passe). Si API retourne `[]`, pas de message (limitation de UX). Si API échoue (erreur réseau/HTTP), message d'erreur affiché correctement (SHIA-348).
 
 ---
 
@@ -480,7 +480,7 @@ Papeete → Moorea — 3500 XPF (0 places)
 
 ## Recommandations pour améliorer la testabilité
 
-1. **Ajouter des messages d'erreur** : l'utilisateur ne peut pas distinguer « pas de transferts » d'« erreur API » (partiellement résolu par SHIA-348)
+1. **Améliorer les messages pour liste vide** : si API retourne `[]` (absence légitime de transferts), afficher un message « Aucun transfert disponible » pour distinguer du silence causé par une erreur API (message d'erreur est déjà affichée par SHIA-348)
 2. **Documenter le contrat API** : quels champs sont obligatoires (surtout `id`) ? Quels types exacts de `id` et `reservationId` ? Consulter `shift-pilot-resa-api` pour le détail des contrats
 3. **Valider les types réels de `id` et `reservationId`** : clarifier le format depuis l'API (CRITIQUE pour SHIA-354)
 4. **Tests automatisés en place** : 13 tests unitaires couvrent les workflows clés (`npm test`). Tests de recette manuelle (navigateur réel, API réelle, multi-navigateur) restent nécessaires
