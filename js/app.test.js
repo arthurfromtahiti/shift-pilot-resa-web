@@ -17,7 +17,11 @@ function makeDOM() {
       items.push(el.textContent);
       this.children.push(el);
     },
-    set textContent(v) { this._textContent = v; },
+    set textContent(v) {
+      this._textContent = v;
+      this.children.length = 0;
+      items.length = 0;
+    },
     get textContent() { return this._textContent; }
   };
 
