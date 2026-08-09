@@ -92,7 +92,8 @@ Les plages de valeurs (`id: 1..3`, `price: 1800 | 3500 | 21000`, `seatsLeft: 0..
 - Protections : verrou `pendingTransfers` empêche les double-clics ; état local conserve les réservations jusqu'au rechargement de page
 
 **État côté serveur** :
-- Comportement après réservation (**INCONNU depuis ce dépôt**) : modification du champ `seatsLeft` au refresh, persistance au redémarrage du serveur, structure des données côté API. Le frontend rafraîchit la liste (GET /transfers) et affiche le champ `seatsLeft` retourné dans la réponse HTTP, mais la mise à jour côté API ne peut pas être observée sans consulter le dépôt ou le comportement en runtime de l'API.
+- Comportement après réservation (**INCONNU depuis ce dépôt**) : modification du champ `seatsLeft` au refresh, structure des données côté API. Le frontend rafraîchit la liste (GET /transfers) et affiche le champ `seatsLeft` retourné dans la réponse HTTP, mais la mise à jour côté API ne peut pas être observée sans consulter le dépôt ou le comportement en runtime de l'API.
+- Persistance au redémarrage du serveur API : **inconnue depuis ce dépôt** — voir documentation `shift-pilot-resa-api`
 
 ---
 
@@ -266,10 +267,10 @@ voyageur → reverse proxy / serveur web (port 443 HTTPS)
 Avant de déclarer le flux end-to-end fonctionnel :
 
 - [x] **API GET /transfers retourne champ `seatsLeft` (harmonisé nom)** — RÉSOLU commit b6910ec
-- [ ] **API GET /transfers inclut header `Access-Control-Allow-Origin`**
+- [ ] **API GET /transfers inclut header `Access-Control-Allow-Origin`** (requis si déploiement multi-domaine)
 - [ ] **API POST /transfers/:id/reserve valide `seats >= 1` et rejette 400 si invalide**
-- [x] **Frontend récupère et affiche les 4 champs sans `undefined`** — RÉSOLU commit b6910ec
+- [x] **Frontend récupère et affiche les 5 champs sans `undefined`** — RÉSOLU commit b6910ec
 - [ ] **Test d'intégration** : appel GET depuis navigateur sur port différent, validate réponse, affichage OK
-- [ ] **Formulaire réservation implémenté** ou issue de suivi créée avec priorité documentée
+- [x] **Interface de réservation implémentée** — boutons « Réserver »/« Annuler » intégrés à la liste (SHIA-354) ; pas de formulaire séparé par conception
 - [ ] **Documentation déploiement** : mécanique d'injection `window.API_BASE_URL` versionnée ou CI/CD décrite
 
