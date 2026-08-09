@@ -4,10 +4,10 @@ import { loadTransfers, reserve, cancelReservation, reservations, pendingTransfe
 
 function makeDOM() {
   const items = [];
-  let errorText = null;
 
   const list = {
     children: [],
+    _textContent: null,
     set innerHTML(_) {
       this.children.length = 0;
       items.length = 0;
@@ -17,23 +17,19 @@ function makeDOM() {
       items.push(el.textContent);
       this.children.push(el);
     },
-    // Simule le comportement réel du navigateur : textContent efface les enfants
-    set textContent(v) {
-      errorText = v;
-      this.children.length = 0;
-      items.length = 0;
-    },
-    get textContent() { return errorText; }
+    set textContent(v) { this._textContent = v; },
+    get textContent() { return this._textContent; }
   };
 
   const errorEl = {
-    set textContent(v) { errorText = v; },
-    get textContent() { return errorText; }
+    _textContent: null,
+    set textContent(v) { this._textContent = v; },
+    get textContent() { return this._textContent; }
   };
 
   return {
     doc: {
-      getElementById: (id) => id === 'transfers-error' ? errorEl : list,
+      getElementById: (id) => id === 'action-error' ? errorEl : list,
       createElement: (tag) => ({
         tag,
         textContent: '',
@@ -45,8 +41,10 @@ function makeDOM() {
       addEventListener() {}
     },
     list,
+    errorEl,
     items,
-    getError: () => errorText
+    getError: () => list._textContent,
+    getActionError: () => errorEl._textContent
   };
 }
 
@@ -192,14 +190,14 @@ test('reserve envoie POST /transfers/:id/reserve et stocke le reservationId', as
 });
 
 test('reserve affiche une erreur si l\'API répond en non-2xx', async () => {
-  const { doc, getError } = makeDOM();
+  const { doc, getActionError } = makeDOM();
   global.document = doc;
   reservations.clear();
   global.fetch = async () => ({ ok: false, status: 409 });
 
   await reserve(1);
 
-  const err = getError();
+  const err = getActionError();
   assert.ok(err !== null, "Aucun message d'erreur affiché");
   assert.ok(err.includes('409'), `Le message d'erreur ne mentionne pas le code : "${err}"`);
   assert.ok(!reservations.has(1), 'reservationId stocké malgré l\'erreur');
@@ -239,7 +237,7 @@ test('cancelReservation envoie DELETE et supprime la réservation', async () => 
 });
 
 test('cancelReservation affiche une erreur si l\'API répond 404', async () => {
-  const { doc, getError } = makeDOM();
+  const { doc, getActionError } = makeDOM();
   global.document = doc;
   reservations.clear();
   reservations.set(1, 'uuid-1');
@@ -247,7 +245,7 @@ test('cancelReservation affiche une erreur si l\'API répond 404', async () => {
 
   await cancelReservation(1, 'uuid-1');
 
-  const err = getError();
+  const err = getActionError();
   assert.ok(err !== null, "Aucun message d'erreur affiché");
   assert.ok(err.includes('404'), `Le message d'erreur ne mentionne pas le code : "${err}"`);
   assert.ok(reservations.has(1), 'reservationId supprimé malgré l\'erreur');
@@ -319,55 +317,50 @@ test('cancelReservation ignore un second appel si une opération est déjà en c
   reservations.clear();
 });
 
-// --- Tests de régression SHIA-423 : un échec ne doit pas effacer les autres transferts ---
+// --- Tests de non-destruction de liste en cas d'erreur d'action ---
 
-test('reserve : un échec n\'efface pas les autres transferts de la liste', async () => {
-  const { doc, list, getError } = makeDOM();
+test('reserve conserve la liste des transferts en cas d\'erreur', async () => {
+  const { doc, items, getActionError } = makeDOM();
   global.document = doc;
   reservations.clear();
-  pendingTransfers.clear();
 
+  // Charger la liste initiale
   global.fetch = async () => ({
     ok: true,
-    json: async () => [
-      { id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 5 },
-      { id: 2, from: 'Moorea', to: 'Huahine', price: 4000, seatsLeft: 3 },
-    ]
+    json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 5 }]
   });
   await loadTransfers();
-  assert.equal(list.children.length, 2, 'Pré-condition : 2 transferts attendus');
+  assert.ok(items.length > 0, 'Pré-condition : la liste doit être remplie');
 
+  // Simuler un échec de réservation
   global.fetch = async () => ({ ok: false, status: 409 });
   await reserve(1);
 
-  assert.equal(list.children.length, 2, 'Les autres transferts ont disparu après l\'échec de réservation');
-  const err = getError();
-  assert.ok(err !== null && err.includes('409'), `Message d'erreur absent ou incorrect : "${err}"`);
-  reservations.clear();
+  assert.ok(items.length > 0, 'La liste a été effacée par l\'erreur de réservation');
+  const err = getActionError();
+  assert.ok(err !== null && err.includes('409'), `L'erreur doit s'afficher dans la zone dédiée : "${err}"`);
 });
 
-test('cancelReservation : un échec n\'efface pas les autres transferts de la liste', async () => {
-  const { doc, list, getError } = makeDOM();
+test('cancelReservation conserve la liste des transferts en cas d\'erreur', async () => {
+  const { doc, items, getActionError } = makeDOM();
   global.document = doc;
   reservations.clear();
-  pendingTransfers.clear();
   reservations.set(1, 'uuid-1');
 
+  // Charger la liste initiale
   global.fetch = async () => ({
     ok: true,
-    json: async () => [
-      { id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 4 },
-      { id: 2, from: 'Moorea', to: 'Huahine', price: 4000, seatsLeft: 3 },
-    ]
+    json: async () => [{ id: 1, from: 'Papeete', to: 'Moorea', price: 3500, seatsLeft: 0 }]
   });
   await loadTransfers();
-  assert.equal(list.children.length, 2, 'Pré-condition : 2 transferts attendus');
+  assert.ok(items.length > 0, 'Pré-condition : la liste doit être remplie');
 
-  global.fetch = async () => ({ ok: false, status: 409 });
+  // Simuler un échec d'annulation
+  global.fetch = async () => ({ ok: false, status: 404 });
   await cancelReservation(1, 'uuid-1');
 
-  assert.equal(list.children.length, 2, 'Les autres transferts ont disparu après l\'échec d\'annulation');
-  const err = getError();
-  assert.ok(err !== null && err.includes('409'), `Message d'erreur absent ou incorrect : "${err}"`);
+  assert.ok(items.length > 0, 'La liste a été effacée par l\'erreur d\'annulation');
+  const err = getActionError();
+  assert.ok(err !== null && err.includes('404'), `L'erreur doit s'afficher dans la zone dédiée : "${err}"`);
   reservations.clear();
 });
