@@ -2,84 +2,78 @@
 
 > Confiance : medium
 
+> **Réconciliation (SHIA-572).** Audit confronté au code courant (`main` @ `acf9f61`). Modifications depuis la version antérieure : (a) `pendingTransfers` Set (SHIA-383) ajouté comme état module-level exporté, complétant la `Map reservations` déjà documentée ; (b) toutes les références de lignes recalées sur le fichier à 90 lignes ; (c) le constat sur `t.seatsLeft` comme condition d'affichage du bouton Réserver confirmé à la ligne 30 (inchangé). La confiance reste `medium` : les types réels de `id`, `reservationId` et `price` ne sont pas observables depuis ce dépôt. Les questions ouvertes sur `id` et `reservationId` restent entières.
+
 ## Compréhension globale
 
-Ce dépôt ne possède aucun modèle de données local : pas d'entité, pas de schéma, pas de base de données, pas de stockage côté client (pas de `localStorage`, pas d'`IndexedDB`, pas de cookie). L'unique « donnée » manipulée est la ressource distante `transfer`, consommée depuis l'API `shift-pilot-resa-api` et jamais persistée localement. La confiance est `medium` non par lecture partielle, mais parce que la forme réelle de cette ressource distante n'a pas pu être observée — seuls les champs effectivement lus dans le code sont connus.
+Ce dépôt ne possède aucun modèle de données persistant : pas d'entité locale, pas de base de données, pas de `localStorage`, pas de cookie. Le modèle de données est entièrement en mémoire et se compose de deux objets module-level — `reservations` (Map) et `pendingTransfers` (Set) — ainsi que de la ressource distante `transfer` consommée depuis l'API. La confiance est `medium` non par lecture partielle, mais parce que la forme complète et les types réels de la ressource `transfer` ne sont observables que depuis `shift-pilot-resa-api`.
 
 ## Résumé exécutif
 
-`shift-pilot-resa-web` possède un modèle de données minimal : un registre local des réservations. La ressource `transfer` (tableau JSON retourné par `GET /transfers`) est consommée, rendue, et stockée temporairement dans une `Map` locale (`reservations : Map<transferId, reservationId>`). Les cinq champs effectivement lus par `js/app.js` sont `id`, `from`, `to`, `price`, `seatsLeft` (`js/app.js`, lignes 20, 22, 28). Depuis SHIA-354, le champ `id` est critique : il sert de clé pour maintenir l'état applicatif des réservations actives pendant la session utilisateur.
+`shift-pilot-resa-web` maintient deux états applicatifs en mémoire, session-locaux, exportés depuis `js/app.js` :
 
-**État applicatif** (SHIA-354) :
-- `Map reservations` : maintient en mémoire les réservations actives pendant la session utilisateur (aucune persistance au-delà du rechargement)
-- Périmètre : local au navigateur, pas de synchronisation multi-utilisateur
-- Cycle de vie : initialisée vide au chargement, remplie par les appels `reserve()`, vidée par `cancelReservation()`
+- **`reservations` Map** (`transferId → reservationId`) : réservations actives de l'utilisateur pendant la session. Remplie par `reserve()` (ligne 58), vidée par `cancelReservation()` (ligne 79), lue par `loadTransfers()` pour l'affichage des boutons (ligne 24).
+- **`pendingTransfers` Set** (`transferId`) : transferts avec une opération réseau en cours. Posé en entrée de `reserve()` (ligne 46) et `cancelReservation()` (ligne 69), levé dans `finally` (lignes 63, 84). Empêche les opérations concurrentes sur le même transfert.
 
-Les types attendus, le caractère obligatoire, et l'exhaustivité de la liste des champs `transfer` sont `INCONNU` — ils ne peuvent être établis que depuis le dépôt `shift-pilot-resa-api`. Aucune migration, aucune contrainte, aucun ORM. L'audit de modèle de données de ce workspace se réduit à documenter ce que le code *attend* de l'API et la nature du registre local.
+La ressource distante `transfer` est consommée avec cinq champs connus (`id`, `from`, `to`, `price`, `seatsLeft`). Aucun stockage persistant, aucune migration, aucun ORM.
 
 ## Constats détaillés
 
-**`VÉRIFIÉ_CODE` — Un modèle local minimal : la Map `reservations`.** Depuis SHIA-354, le code maintient un état applicatif en mémoire :
-- `export const reservations = new Map();` (`js/app.js`, ligne 6) — registre session de réservations actives
-- Clé : `transferId` (du champ `id` retourné par l'API)
-- Valeur : `reservationId` (retourné par la réponse POST `/transfers/{id}/reserve`)
-- Cycle de vie : mémoire volatille, perte au rechargement de la page
-- Accès : remplie par `reserve()` (ligne 54), vidée par `cancelReservation()` (ligne 71), lue par `loadTransfers()` pour l'affichage des boutons (ligne 22)
+**`VÉRIFIÉ_CODE` — État 1 : `export const reservations = new Map()`** (`js/app.js`, ligne 6). Clé : `transferId` (valeur du champ `id` retourné par `GET /transfers`). Valeur : `reservationId` (valeur du champ `reservationId` retourné par `POST /transfers/{id}/reserve`, ligne 58). Cycle de vie : mémoire volatile, réinitialisée vide à chaque chargement de page. Lectures : `reservations.get(t.id)` (ligne 24, détermine si le bouton Annuler ou Réserver est affiché), `reservations.has(transferId)` (ligne 45, garde anti double-réservation). Aucune persistance au-delà de la session navigateur.
 
-Pas de stockage persistant (`localStorage`, `IndexedDB`, `cookie`), pas de synchronisation multi-utilisateur, pas de migration de données. Un modèle entièrement session-local.
+**`VÉRIFIÉ_CODE` — État 2 : `export const pendingTransfers = new Set()`** (`js/app.js`, ligne 8). Contenu : `transferId` des opérations en cours. Posé par `pendingTransfers.add(transferId)` (lignes 46, 69) avant chaque appel réseau. Levé par `pendingTransfers.delete(transferId)` (lignes 63, 84) dans les blocs `finally`. Cycle de vie : volatile, réinitialisé vide au chargement. Invariant critique : un `transferId` ne devrait jamais rester dans `pendingTransfers` au-delà de la durée de l'opération — garanti par `finally`, mais non observable en dehors des tests.
 
-**`VÉRIFIÉ_CODE` — La ressource `transfer` : cinq champs lus, forme complète inconnue.** `js/app.js` accède à cinq champs :
-- `t.id` : utilisé comme clé `Map` pour les réservations (ligne 22) — **critique depuis SHIA-354**
-- `t.from`, `t.to` : affichage du texte du transfert (ligne 20)
-- `t.price` : affichage du prix (ligne 20)
-- `t.seatsLeft` : affichage et logique conditionnelle pour le bouton Réserver (lignes 20, 28) — détermine si le bouton Réserver est affiché
+**`VÉRIFIÉ_CODE` — Ressource distante `transfer` : cinq champs lus.** `js/app.js` accède à cinq champs :
+- `t.id` : clé de `reservations` Map (ligne 24) et identifiant dans les URLs des endpoints POST/DELETE. **Impact si `id` absent (conditionnel — voir section Risques)** : `undefined` deviendrait clé Map et les URLs REST seraient malformées (`/transfers/undefined/...`) ; cet impact dépend d'une réponse API malformée, non observable depuis ce dépôt.
+- `t.from`, `t.to` : affichage du texte du transfert (ligne 22).
+- `t.price` : affichage du prix (ligne 22).
+- `t.seatsLeft` : affichage (ligne 22) et condition d'affichage du bouton Réserver (`t.seatsLeft > 0`, ligne 30).
 
-Ces cinq champs sont les seuls utilisés par le code ; l'API peut en renvoyer davantage (horaires, compagnie, statut) sans que ce front en tire parti. Le type de `price` (nombre entier XPF ? décimal ? chaîne ?), le type de `id` (nombre entier ? UUID ? chaîne ?), et la sémantique de `seatsLeft` (0 = complet ? valeur négative possible ?) ne sont pas observables depuis ce dépôt. Statut : `VÉRIFIÉ_CODE` pour l'usage des cinq champs ; `INCONNU` pour la forme complète et les types exacts. **Note critique SHIA-354** : le champ `id` doit être présent, unique, et utilisable comme clé `Map` sans ambiguïté.
+Ces cinq champs sont les seuls utilisés ; l'API peut en renvoyer davantage. Le type de `id` (entier ? UUID chaîne ?), de `price` (entier XPF ? décimal ?), et la sémantique de `seatsLeft` (peut-il être négatif ?) sont `INCONNU` depuis ce dépôt.
 
-**`VÉRIFIÉ_CODE` — Aucune validation côté client.** Aucune garde sur la présence ou le type des cinq champs avant affichage (`js/app.js`, ligne 20) ni du `reservationId` retourné par l'API (`js/app.js`, ligne 54). Un champ absent produit `undefined` dans le rendu ; un champ de type inattendu (objet à la place d'un nombre) s'affiche tel quel (`[object Object]`). Il n'y a pas de schéma, pas de coerce, pas de valeur par défaut. Le front dépend implicitement d'un contrat non formalisé avec l'API. Depuis SHIA-354, la validation du `reservationId` retourné par POST `/transfers/:id/reserve` est critique pour le bon fonctionnement de l'annulation (DELETE).
+**`VÉRIFIÉ_CODE` — `reservationId` retourné par POST.** La réponse de `POST /transfers/{id}/reserve` est désérialisée en `data` (`js/app.js`, ligne 57) et `data.reservationId` est stocké dans `reservations` (ligne 58). Ce même `reservationId` est passé à `cancelReservation()` (ligne 28) et utilisé dans l'URL DELETE (ligne 73). Les fixtures de `js/app.test.js` emploient une chaîne `'uuid-1'` — suggère une chaîne/UUID — mais ce sont des valeurs de test, pas une preuve du contrat réel. Type et durée de vie exacts : `INCONNU`.
 
-**`VÉRIFIÉ_CODE` — Pas de gestion des données manquantes ni de l'état vide.** Si l'API renvoie un tableau vide, la boucle `for...of` s'exécute zéro fois — la `<ul>` reste vide sans message explicatif à l'utilisateur (`js/app.js`, lignes 18–36, `index.html`, ligne 9). Aucune distinction visuelle entre « erreur API » (catchée, affiche message) et « aucun transfert disponible » (silencieux).
+**`VÉRIFIÉ_CODE` — Aucune validation des données entrantes.** Aucune garde sur la présence ou le type des cinq champs de `transfer` avant accès. Un `id` absent produit une clé `undefined` dans `reservations` (`js/app.js`, ligne 24) — toutes les réservations collidant sur la même clé. Un `seatsLeft` absent produit `undefined places` dans l'affichage (ligne 22). Aucun `Array.isArray` avant l'itération sur `transfers` (ligne 20) — si l'API renvoie un objet ou `null`, la boucle `for...of` lève une `TypeError` attrapée par le `catch`.
+
+**`VÉRIFIÉ_CODE` — Aucune gestion de l'état vide.** Un tableau vide renvoyé par l'API fait tourner la boucle zéro fois — la `<ul>` reste vide sans message explicite (distinct d'une erreur, qui affiche un message via le `catch`). Depuis SHIA-348 (non évalué depuis ce dépôt), la distinction erreur / liste vide reste asymétrique : erreur → message visible, liste vide → silence.
 
 ## Forces
 
-- **État applicatif minimal et session-local** : la `Map` de réservations ne persiste qu'en mémoire, pas de risque de corruption persistante. Aucune migration de données, aucune synchronisation multi-utilisateur à gérer côté front.
-- **Aucune donnée personnelle dans ce dépôt** : le registre ne contient que des IDs de transfert et de réservation ; pas de PII visible, pas de stockage de profil utilisateur.
-- **Simplicité de cycle de vie** : réservations jetées au rechargement, garantissant une cohérence locale triviale (pas de cache à invalider, pas de stale state).
+- **État applicatif minimal et session-local** : `reservations` et `pendingTransfers` sont en mémoire, pas de risque de corruption persistante, aucune migration de données.
+- **`INCERTITUDE` — présence de données personnelles non vérifiable.** Le registre contient des IDs de transfert (`transfer.id`) et de réservation (`reservationId`), mais la sémantique de ces identifiants est inconnue depuis ce dépôt seul. S'ils permettent d'identifier indirectement un utilisateur ou un passager (via l'API ou un autre service), ils constitueraient des données personnelles au sens RGPD. À confirmer avec le registre de traitements côté API (`shift-pilot-resa-api`).
+- **Export des deux états** (`reservations`, `pendingTransfers`) : testables directement depuis `js/app.test.js` sans mock, ce qui rend les invariants vérifiables.
+- **`finally` garantissant la libération de `pendingTransfers`** (lignes 63, 84) : pas de verrou permanent en cas d'erreur réseau ou d'exception dans `reserve`/`cancelReservation`.
 
 ## Dettes techniques
 
-- **Contrat implicite et non formalisé avec l'API.** Les cinq champs attendus (`id`, `from`, `to`, `price`, `seatsLeft`) ne sont documentés nulle part dans ce dépôt — ni dans `README.md`, ni dans un fichier de types (TypeScript, JSDoc, JSON Schema). Si l'API évolue (renommage d'un champ, changement de type, suppression de `id`), le front casse silencieusement. Localisation : `js/app.js`, lignes 20–22, 28. **Note** : le champ `seatsLeft` est en accord avec l'API depuis SHIAAAAAAAAAAAAAAAAAAAAAAAA-311 ; le champ `id` est critique depuis SHIA-354 (clé de la `Map`).
-- **Pas de validation du type de `id`.** Le champ `id` est supposé être un identifiant unique comparable avec `===` dans la `Map`, mais son type exact est inconnu (nombre entier ? UUID chaîne ?). Aucune garde sur la présence. Depuis SHIA-354, `id` est obligatoire pour la fonctionnalité de réservation. Localisation : `js/app.js`, ligne 22.
-- **Pas de synchronisation multi-utilisateur.** Si deux utilisateurs réservent la dernière place simultanément, le front ne détecte pas le conflit. Aucun mécanisme de versioning, de polling ou de WebSocket pour synchroniser les changements d'autres utilisateurs. Localisation : front entier (responsabilité de l'API).
-- **Aucune gestion de l'état vide.** Un tableau vide renvoyé par l'API (aucun transfert disponible) et une erreur réseau (catch) produisent deux résultats différents depuis SHIA-348 (message d'erreur), mais un tableau vide est silencieux. Localisation : `js/app.js`, lignes 18–40.
+- **Contrat implicite et non formalisé avec l'API.** Les cinq champs attendus (`id`, `from`, `to`, `price`, `seatsLeft`) ne sont documentés nulle part dans ce dépôt — ni `README.md`, ni JSDoc, ni JSON Schema. Si l'API évolue (renommage, suppression), le front casse silencieusement. `id` est le champ le plus critique : son absence ou sa mutation casse la logique de réservation. Localisation : `js/app.js`, lignes 22, 24, 30.
+- **Pas de validation du type de `id` et de `reservationId`.** Aucune garde sur leur présence avant utilisation comme clé Map ou segment d'URL. Localisation : `js/app.js`, lignes 24, 58, 73.
+- **Aucun mécanisme de synchronisation multi-utilisateur.** Si deux utilisateurs réservent la dernière place simultanément, le front de chacun croit avoir réussi (état `reservations` cohérent localement) jusqu'au prochain rechargement. Responsabilité de l'API, mais à documenter.
+- **Aucune gestion de l'état vide** (liste de transferts vide). Silence total — pas de message « aucun transfert disponible ». Localisation : `js/app.js`, lignes 20–38.
 
 ## Zones critiques
 
-- **`js/app.js`, lignes 20, 22, 28 — accès direct aux champs sans validation** : c'est le seul endroit où le contrat avec l'API est exprimé, de façon implicite. Les cinq champs sont accédés sans garde :
-  - Ligne 20 : `t.from`, `t.to`, `t.price`, `t.seatsLeft` (affichage du texte du transfert)
-  - Ligne 22 : `t.id` (clé `Map` de réservations — **critique depuis SHIA-354**, détermine si le bouton Annuler est visible)
-  - Ligne 28 : `t.seatsLeft > 0` (logique conditionnelle du bouton Réserver)
-  
-  Un senior regarderait ici pour évaluer la fragilité aux évolutions de l'API. **Audit noté le 2026-08-06** : contrat actuellement correct (`seatsLeft` et `id` lus = fournis par l'API). **Note critique** : le champ `id` doit être présent et utilisable comme clé `Map` sans ambiguïté depuis SHIA-354.
+- **`js/app.js`, lignes 22, 24, 30 — accès directs aux champs sans validation** : c'est le seul endroit où le contrat avec l'API est exprimé, de façon implicite. Le champ `id` (ligne 24) est le plus critique : clé `Map` et identifiant dans les URLs POST/DELETE.
+- **`js/app.js`, lignes 46, 63–64, 69, 83–84 — cycle de vie de `pendingTransfers`** : tout dysfonctionnement du bloc `finally` (impossible en JS normal, mais possible si le runtime est interrompu) laisserait un `transferId` bloqué dans `pendingTransfers` jusqu'au rechargement de page.
 
 ## Risques
 
-- **`VÉRIFIÉ_CODE` — Rendu `undefined` silencieux si l'API modifie un nom de champ.** Un renommage de `seatsLeft` en `seats` dans l'API produirait `undefined places` dans chaque `<li>`, sans erreur. Idem pour `id` : si l'API renomme `id` en `transferId`, la clé `Map` serait `undefined` et chaque réservation échouerait silencieusement. **Note** : ce risque a frappé précédemment (bug SHIAAAAAAAAAAAAAAAAAAAAAAAA-311 : API exposait `seatsLeft`, front lisait `availableSeats`) et a été corrigé commit b6910ec.
-- **`HAUT` — Suppression du champ `id` côté API.** Depuis SHIA-354, le champ `id` est obligatoire pour la fonctionnalité de réservation. Une suppression accidentelle côté API rendrait la réservation impossible sans crash manifeste (clés `Map` `undefined`).
-- **`HAUT` — Conflit de réservation simultanée.** Si deux navigateurs réservent la dernière place en même temps, le front de chacun pense avoir réussi (état `Map` cohérent localement), mais l'API ne peut en servir qu'un. Aucune détection de conflit côté front ; synchronisation via rechargement manuel ou polling nécessaire.
-- **`INCONNU` — Forme réelle et contraintes de la ressource `transfer`.** Les types, les valeurs limites et les éventuels champs obligatoires de `transfer` ne sont connus que depuis `shift-pilot-resa-api`. Si ce dépôt évolue (tri, filtre, affichage conditionnel), le développeur devra supposer ou consulter l'autre dépôt.
+- **`VÉRIFIÉ_CODE` — Rendu `undefined` silencieux si l'API modifie un champ.** Un renommage de `seatsLeft` en `seats` côté API produirait `undefined places` dans chaque `<li>`, sans erreur. Ce risque a frappé précédemment (bug SHIAAAAAAAAAAAAAAAAAAAAAAAA-311 : `seatsLeft` / `availableSeats`) et a été corrigé. Localisation : `js/app.js`, ligne 22.
+- **`VÉRIFIÉ_CODE` — Mécanisme de collision si `id` est absent.** Si un objet `transfer` sans champ `id` était reçu, `undefined` deviendrait clé Map (`js/app.js`, ligne 24) : toutes les réservations partageraient la même entrée, et les URLs REST construites seraient malformées (`/transfers/undefined/...`). L'état `reservations` serait ambigu ; l'impact réel côté API (annulation ou non) reste incertain.
+- **`HYPOTHÈSE` — Scénario : l'API retourne un objet `transfer` sans champ `id`.** Non observé depuis ce dépôt. Si ce scénario survenait, le mécanisme ci-dessus s'appliquerait. Sans preuve que l'API puisse omettre `id`, ce risque ne justifie pas un calibrage `HAUT` — gravité effective conditionnelle à ce scénario. Localisation : `js/app.js`, lignes 24, 58.
+- **`HYPOTHÈSE` — Conflit de réservation simultanée.** Deux navigateurs réservant la dernière place en même temps : le front de chacun peut croire avoir réussi localement. Ni l'atomicité de l'opération côté serveur ni la réponse d'erreur éventuelle ne sont observables depuis ce dépôt (`js/app.js`, lignes 45–46, 68–69). Aucune détection de conflit côté front — responsabilité de l'API.
+- **`INCONNU` — Forme réelle et contraintes de la ressource `transfer`.** Types, valeurs limites et exhaustivité des champs de `transfer` non observables depuis ce dépôt.
 
 ## Recommandations priorisées
 
-1. **Documenter le contrat attendu avec l'API** dans `README.md` ou dans un commentaire JSDoc de `loadTransfers` : les cinq champs (`id`, `from`, `to`, `price`, `seatsLeft`), leurs types et leur caractère obligatoire. **Critique depuis SHIA-354** : le champ `id` est maintenant nécessaire pour la fonctionnalité de réservation (clé `Map` des réservations). Faible effort, forte valeur de maintenabilité. Fichier : `README.md`, `js/app.js`.
-2. **Ajouter une validation ou une garde sur le type de `id`** — assurer que `id` est un identifiant unique utilisable comme clé `Map` et que `reservationId` retourné par l'API est également valide. Depuis SHIA-354, ces deux valeurs sont critiques pour la fonctionnalité de réservation/annulation. Localisation : `js/app.js`, lignes 22–27, 54–55, 71–72.
-3. **Pas de synchronisation multi-utilisateur** — documenter explicitement dans `README.md` que les réservations sont session-locales, pas de détection de conflit en cas de réservation simultanée. Fichier : `README.md`, section déjà présente dans `CDC_FONCTIONNEL.md`.
-4. **Ajouter un message explicite pour la liste vide** — distinguer « aucun transfert disponible » de « erreur de chargement ». Fichier : `js/app.js`, section de rendu (lignes 18–40) (optionnel, non critique).
+1. **Documenter le contrat attendu avec l'API** dans `README.md` ou en JSDoc de `loadTransfers` : les cinq champs (`id`, `from`, `to`, `price`, `seatsLeft`), leurs types présumés et leur caractère obligatoire. Faible effort, forte valeur de maintenabilité. Fichiers : `README.md`, `js/app.js`.
+2. **Ajouter une garde sur `id` et `reservationId`** — vérifier que `t.id` est défini avant de l'utiliser comme clé Map et comme segment d'URL ; vérifier que `data.reservationId` est défini avant `reservations.set`. Localisation : `js/app.js`, lignes 24, 58.
+3. **Valider que la réponse `GET /transfers` est un tableau** avant itération (`Array.isArray(transfers)`) — le `catch` attrape la `TypeError`, mais distinguer explicitement un format inattendu d'une erreur réseau améliore le diagnostic. Localisation : `js/app.js`, ligne 20.
+4. **Ajouter un message explicite pour la liste vide** — distinguer « aucun transfert disponible » de « erreur de chargement ». Fichier : `js/app.js`, après la boucle (lignes 20–38).
 
 ## Questions ouvertes
 
-- **Quel est le type réel et le format de `id` (nombre entier ? UUID chaîne ? autre ?) — CRITIQUE depuis SHIA-354** car utilisé comme clé `Map` et identifiant de transfert dans les endpoints de réservation. Non observable depuis ce dépôt, à établir depuis `shift-pilot-resa-api`. Impacte la robustesse de la Map et la cohérence entre les appels GET et POST/DELETE.
-- **Quel est le type réel de `reservationId` retourné par POST `/transfers/:id/reserve` ? — CRITIQUE depuis SHIA-354** Doit-il être réutilisable dans DELETE `/transfers/:id/reservations/:reservationId` avec les mêmes paramètres ? Non observable depuis ce dépôt, impact direct sur l'annulation.
-- Quels sont les types réels de `price` (nombre entier, décimal, chaîne formatée ?) et `seatsLeft` (entier, peut-il être négatif ?) — non observables depuis ce dépôt, à établir depuis `shift-pilot-resa-api`.
-- L'API renvoie-t-elle d'autres champs (horaires, opérateur, statut de disponibilité) que ce front n'utilise pas ? Si oui, y a-t-il des fonctionnalités à venir qui les exploiteront ?
-- La ressource `transfer` peut-elle être vide (aucun transfert disponible) ou l'API garantit-elle toujours au moins une entrée ?
+- **Quel est le type réel de `id` (entier ? UUID chaîne ?)** — critique car utilisé comme clé Map et identifiant dans les URLs POST/DELETE. Non observable depuis ce dépôt.
+- **Quel est le type réel de `reservationId` retourné par POST `/transfers/:id/reserve` ?** — doit être réutilisable tel quel dans DELETE `/transfers/:id/reservations/:reservationId`. Non observable depuis ce dépôt.
+- Quels sont les types réels de `price` et `seatsLeft` (peut-il être négatif) ?
+- L'API renvoie-t-elle d'autres champs que ce front n'utilise pas ?

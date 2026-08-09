@@ -1,42 +1,42 @@
 # Relecture — ARCHITECTURE_AUDIT.md
 
+> Mise à jour SHIA-572. La version précédente de cette relecture portait sur l'ancien `js/app.js` (20 lignes, sans package.json ni tests). Elle est intégralement remplacée par la relecture de l'audit réconcilié.
+
 ## Verdict global
 
-**Bon** — L'audit est exploitable sans réserve bloquante. Les statuts sont correctement appliqués, les citations de lignes sont exactes, les risques sont concrets et sourcés, et l'honnêteté sur les limites (mécanisme d'injection inconnu depuis ce dépôt) est irréprochable.
+**À corriger** — La correction du scénario de crash est appliquée, mais le risque de configuration contient encore une conséquence factuelle incorrecte : le fallback `localhost:3100` est bien prouvé, tandis que le `catch` affiche une erreur si l'appel échoue ; le catalogue n'est donc pas simplement « vide » sans message. La formulation doit distinguer le comportement code observé du scénario de déploiement hypothétique.
 
 ## Problèmes bloquants
 
-Aucun.
+- **Risque `window.API_BASE_URL` mal décrit (`ARCHITECTURE_AUDIT.md:47`).** `js/app.js:2-3` prouve le fallback vers `http://localhost:3100`, et `js/app.js:12-16,39-40` prouve qu'un échec réseau est attrapé puis affiché dans `list.textContent`. L'audit affirme pourtant « aucune erreur visible » et « catalogue vide » ; cela contredit le code. Requalifier en deux éléments : `VÉRIFIÉ_CODE` pour le fallback et le message d'erreur en cas d'échec, `HYPOTHÈSE` pour l'absence d'injection en production et son occurrence.
 
-## Problèmes mineurs
+## Corrections appliquées (SHIA-572, passage 2)
 
-Aucun.
+- **Dettes techniques — état module-level partagé** : la mention « un `finally` qui ne s'exécute pas » est clarifiée comme `HYPOTHÈSE`. Le `finally` s'exécute toujours en JS normal (`js/app.js:62–64, 83–84`) ; le scénario d'interruption runtime entre `pendingTransfers.add` et `finally` est hypothétique.
 
 ## Points vérifiés et corrects
 
-**1. Décompte de lignes — exact.**
-- `js/app.js` : 20 lignes. Vérifié ligne à ligne. ✓
-- `index.html` : 12 lignes. Vérifié ligne à ligne. ✓
-- `README.md` : citation *« HTML + JS natif, aucune dépendance, aucun build »* — texte exact à `README.md:7`. ✓
+**1. Architecture plate — `VÉRIFIÉ_CODE` exact.**
+`index.html` (12 lignes) + `js/app.js` (90 lignes) + `js/app.test.js` (311 lignes) + `package.json` minimal. Aucun bundler, aucun framework, aucune dépendance de production. ✓
 
-**2. Statuts appliqués correctement.**
-- `VÉRIFIÉ_CODE` pour les observations directes dans le code (pas de couches, configuration par `window.API_BASE_URL`, gardes `typeof window/document`). ✓
-- `HYPOTHÈSE` pour le mécanisme d'injection de `window.API_BASE_URL` en production — non observable depuis ce dépôt. ✓
+**2. Configuration par injection globale — `VÉRIFIÉ_CODE` + `HYPOTHÈSE` correctement appliqués.**
+`window.API_BASE_URL` aux lignes 2–3 : observation code = `VÉRIFIÉ_CODE`. Mécanisme d'injection en production = `HYPOTHÈSE` (non versionné). ✓
 
-**3. Citations de lignes exactes.**
-- `window.API_BASE_URL` avec fallback `localhost:3100` aux lignes 2–3 : `js/app.js:2-3` correspond mot pour mot. ✓
-- Fetch à `js/app.js:6`, `response.json()` à `js/app.js:7` : exact. ✓
-- Boucle `for...of` aux lignes 11–15 : exact. ✓
+**3. Garde `typeof document` — justifiée par les tests.**
+Ligne 88 : permet l'import depuis `js/app.test.js` sans déclencher `DOMContentLoaded`. Usage réel confirmé. ✓
 
-**4. Gardes `typeof` correctement identifiées.**
-L'audit cite les deux gardes (`typeof window !== "undefined"`, ligne 2 ; `typeof document !== "undefined"`, ligne 18) et les interprète correctement comme une conscience de l'environnement Node.js. ✓
+**4. `package.json` minimal — `VÉRIFIÉ_CODE` exact.**
+`{ "type": "module", "scripts": { "test": "node --test" } }`. Aucune dépendance de production. ✓
 
-**5. Risques concrets, non génériques.**
-- Risque injection `window.API_BASE_URL` : scénario (l'appli pointe silencieusement vers `localhost:3100` si mal configurée) + preuve (`js/app.js:2-3`). Concret. ✓
-- Risque évolution architecturale : conditionnel à un ajout de fonctionnalité, clairement qualifié comme tel. ✓
+**5. Absence de routing — `VÉRIFIÉ_CODE` exact.**
+Une seule page, un seul template. Tout ajout de flux multi-page nécessite un mécanisme inexistant aujourd'hui. ✓
 
-**6. Aucun secret recopié.** ✓
+**6. Risques correctement qualifiés.**
+- `window.API_BASE_URL` non injectée → `HYPOTHÈSE`. ✓
+- Aucune voie d'évolution structurée → `VÉRIFIÉ_CODE` (constat structurel direct). ✓
+
+**7. Aucun secret recopié.** ✓
 
 ## Recommandations de correction
 
-Aucune correction requise.
+1. Corriger `.onboarding/audits/ARCHITECTURE_AUDIT.md:47` sans présenter comme fait l'absence d'erreur visible ; conserver les citations `js/app.js:2-3,12-16,39-40`.
