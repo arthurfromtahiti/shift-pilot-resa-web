@@ -7,7 +7,7 @@
 ## Workspaces couverts
 
 - **shift-pilot-resa-api** — Service HTTP backend, Node.js natif sans framework. Expose le catalogue de transferts inter-îles et gère les réservations en temps réel (données en mémoire, volatiles au redémarrage).
-- **shift-pilot-resa-web** — Interface web statique HTML/JS, aucune dépendance. Affiche le catalogue de transferts en interrogeant l'API. Consultation uniquement (réservation absent du code).
+- **shift-pilot-resa-web** — Interface web statique HTML/JS, aucune dépendance. Affiche le catalogue de transferts en interrogeant l'API ; implémente la **réservation et l'annulation d'une place par clic** (SHIA-354) via boutons intégrés à la liste de transferts.
 
 ---
 
@@ -26,15 +26,22 @@
 - **Usage** : rendu DOM pour chaque transfert (`<li>Papeete → Moorea — 3500 XPF (X places)</li>`)
 
 **Endpoint 2 : POST /transfers/:id/reserve (réservation)**
-- **Consumé par** : aucun (formulaire absent du frontend — statut TODO SHIAAAAAAAAAAAAAAAAAAAAAAAA-61)
-- **Contrat** :
-  - Requête : POST sur `${API_BASE_URL}/transfers/{id}/reserve` avec body JSON optionnel `{ seats: N }`
-  - Réponse 200 : `{ transferId: N, seatsLeft: X }`
-  - Erreur 404 : transfert inexistant
-  - Erreur 409 : plus de places disponibles
-- **Implémentation API** : `shift-pilot-resa-api/src/server.js:23–41` (route POST /transfers/:id/reserve)
-- **Usage** : réservation côté client une fois le formulaire ajouté au frontend
-- **État de maturité** : API fonctionnel, UI à implémenter
+- **Consumé par** : `shift-pilot-resa-web/js/app.js`, fonction `reserve()` (SHIA-354)
+- **Contrat observable** :
+  - Requête : POST sur `${API_BASE_URL}/transfers/{id}/reserve` avec body JSON `{ seats: 1 }`
+  - Réponse 200 : objet JSON contenant un champ `reservationId` (utilisé pour l'annulation)
+  - Détails côté API (forme complète, champs supplémentaires, codes d'erreur, comportement de décrément de `seatsLeft`) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`
+- **Implémentation frontend** : `shift-pilot-resa-web/js/app.js:44–65` — bouton « Réserver » déclenche appel POST ; protection anti double-clic (SHIA-383) ; rafraîchissement automatique de la liste après succès
+- **État de maturité** : API + UI implémentés et testés (SHIA-354)
+
+**Endpoint 3 : DELETE /transfers/:id/reservations/:reservationId (annulation)**
+- **Consumé par** : `shift-pilot-resa-web/js/app.js`, fonction `cancelReservation()` (SHIA-354)
+- **Contrat observable** :
+  - Requête : DELETE sur `${API_BASE_URL}/transfers/{id}/reservations/{reservationId}`
+  - Réponse attendue : 204 ou 200 avec corps vide
+  - Comportement côté API (réaugmentation de `seatsLeft`) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`
+- **Implémentation frontend** : `shift-pilot-resa-web/js/app.js:67–86` — bouton « Annuler » déclenche appel DELETE ; protection anti double-clic (SHIA-383) ; rafraîchissement automatique de la liste après succès
+- **État de maturité** : API + UI implémentés et testés (SHIA-354)
 
 ---
 
@@ -52,7 +59,7 @@
 **Points clés** :
 - Découplage complet : API ne connaît pas le frontend, frontend ignore les détails internes de l'API
 - Contrat API-client exprimé implicitement dans le code (`js/app.js:13` accède aux champs)
-- Dépendance réseau critique : si API injoignable → liste vide sans message d'erreur
+- Dépendance réseau critique : si API injoignable → message d'erreur affiché à l'utilisateur (SHIA-348)
 
 **Données partagées** :
 ```
@@ -61,28 +68,27 @@ Transfer {
   from: "Papeete" | "Raiatea",
   to: "Moorea" | "Bora Bora" | "Tahaa",
   price: 1800 | 3500 | 21000 (XPF),
-  seatsLeft: 0..28       // Lu par frontend et produit par API (même sémantique; voir transfers.js:3-6 pour capacités réelles)
+  seatsLeft: 0..28       // Lu par frontend, produit par API (même sémantique, capacités réelles non vérifiables depuis ce dépôt)
 }
 ```
 
-### Flux 2 : Réservation de places (parcours voyageur — futur)
+### Flux 2 : Réservation de places (parcours voyageur — SHIA-354)
 
-**Séquence (potentielle, une fois formulaire implémenté)** :
-1. Voyageur remplit formulaire réservation (transfert ID + nombre de places)
-2. Frontend émet POST /transfers/{id}/reserve avec body `{ seats: N }`
-3. API valide disponibilité, décrémente compteur `sold` en mémoire
-4. API retourne 200 avec `{ transferId, seatsLeft }` (nouvelles places libres)
-5. Frontend affiche confirmation et optionnellement rafraîchit la liste
-6. Autres voyageurs doivent recharger manuellement la page — aucun mécanisme de rafraîchissement (polling, WebSocket) n'existe dans le code
+**Séquence réelle** :
+1. Voyageur clique sur bouton « Réserver » pour un transfert avec places disponibles
+2. Frontend (`js/app.js:reserve()`) vérifie que le transferId n'est pas déjà en cours de traitement (Set `pendingTransfers`)
+3. Frontend émet POST /transfers/{id}/reserve avec body `{ seats: 1 }`
+4. API valide et traite la réservation ; **les détails de validation côté API ne sont pas observables depuis ce dépôt**
+5. Frontend stocke le `reservationId` retourné dans une Map locale (`reservations`)
+6. Frontend rafraîchit automatiquement la liste
+7. Voyageur voit le bouton « Réserver » remplacé par « Annuler » pour ce transfert
 
-**Invariant métier** :
-- Places vendues + places libres = capacité totale (stockée comme `seatsLeft = seats - sold`)
-- Aucune réservation si places libres insuffisantes (garde dans `bookSeats()`, `src/transfers.js:24`)
+**Invariant côté frontend** :
+- Une seule place réservable par transfert et par session (clé `transferId` dans Map `reservations`)
+- Protections : verrou `pendingTransfers` empêche les double-clics ; état local conserve les réservations jusqu'au rechargement de page
 
 **État côté serveur** :
-- Chaque réservation décrémente le compteur du transfert
-- Redémarrage du process perd toutes les réservations (données volatile, acceptable pour pilote)
-- Pas de persistance cross-process
+- Comportement après réservation (**INCONNU depuis ce dépôt**) : le champ `seatsLeft` diminue-t-il au refresh ? La réservation persiste-t-elle au redémarrage du serveur ? Voir documentation `shift-pilot-resa-api`. Le frontend rafraîchit la liste (GET /transfers) et affiche le nouveau `seatsLeft` retourné, mais la mise à jour côté API ne peut pas être observée sans consulter le dépôt API ou l'infrastructure.
 
 ---
 
@@ -123,78 +129,78 @@ Transfer {
 - Non testé en intégration multi-domaine
 
 **Impact en production** :
-- Si API et frontend déployés sur origines différentes → toutes les requêtes bloquées navigateur
-- Liste vide, aucun message d'erreur visible
-- Correctif simple mais requis avant tout déploiement
+- Si API et frontend déployés sur origines différentes → toutes les requêtes bloquées par le navigateur
+- Frontend affiche un message d'erreur : « Impossible de charger les transferts : ... » (message générique, mais pas silencieux depuis SHIA-348)
+- Correctif requis côté API avant tout déploiement multi-domaine
 
 **Recommandation** :
-- Ajouter `res.setHeader('Access-Control-Allow-Origin', '*')` ou domaine spécifié dans l'endpoint GET /transfers
-- Traiter aussi les requêtes OPTIONS (preflight) si HEAD ou headers personnalisés ajoutés à l'avenir
-- Tester en intégration avec frontend sur port différent avant livraison
+- Consulter la documentation `shift-pilot-resa-api` pour confirmer l'ajout des headers CORS
+- Tester en intégration avec frontend sur port/domaine différent avant livraison en production
+- Le frontend capture les erreurs réseau et les affiche à l'utilisateur (SHIA-348)
 
-### Risque 3 : Validation manquante sur `seats` (CRITIQUE POUR DONNÉES)
+### Risque 3 : Validation de `seats` côté API (DÉPENDANCE EXTERNE)
 
-**Le problème** :
-- API accepte `seats` négatif, zéro ou absent dans POST /transfers/:id/reserve
-- Pas de vérification `Number.isInteger(seats) && seats >= 1`
-- Valeur par défaut silencieuse (`undefined → 1`) masque bugs clients
+**Ce que le frontend fait** :
+- Frontend envoie toujours `{ seats: 1 }` — une seule place par action (SHIA-354)
+- Aucune possibilité côté frontend de demander plusieurs places ou un nombre négatif
 
-**Preuve** :
-- Implémentation : `src/server.js:32` extrait `parsed.seats` sans validation
-- Fallback : `const seats = parsed.seats ?? 1` (nullish coalescing, `src/server.js:36`)
-- Risque : `POST /transfers/1/reserve body={"seats":-5}` décrémente le stock (inversé)
-
-**Impact** :
-- Stock peut descendre sous zéro (violation invariant)
-- Client mal écrit envoyant `-5` crée un overbooking caché
-- Chaîne d'intégration ne détecte le bug que si test avec valeurs négatives explicites
+**Ce que l'API doit faire** (**INCONNU** depuis ce dépôt) :
+- Valider `seats` pour rejeter les valeurs négatives ou zéro
+- Vérifier que `seats >= 1` et `seats <= seatsLeft`
+- Rejeter avec code HTTP 400 si validation échoue
 
 **Recommandation** :
-- Valider et rejeter 400 si `seats` n'est pas un entier ≥ 1
-- Ajouter test de régression `POST /transfers/1/reserve body={"seats":-1}` attendant 400
+- Consulter la documentation `shift-pilot-resa-api` ou effectuer des tests de validation pour confirmer que :
+  - `POST /transfers/1/reserve body={"seats":-1}` retourne une erreur 400 (pas un décrément inversé)
+  - `POST /transfers/1/reserve body={"seats":0}` retourne une erreur 400
+  - `POST /transfers/1/reserve body={"seats":100}` (demande > places) retourne une erreur 400
 
-### Risque 4 : Formulaire réservation absent du frontend (FONCTIONNEL)
+### Risque 4 : Interface de réservation sans formulaire multi-places (par conception) — FONCTIONNALITÉ CONFIRMÉE
 
-**Le problème** :
-- Endpoint POST /transfers/:id/reserve implémenté et testé côté API
-- Aucun formulaire HTML côté frontend pour déclencher la réservation
-- README.md annonce « interface de réservation » mais code contient seulement la consultation
+**État actuel — CONFIRMÉ OPÉRATIONNEL** :
+- Endpoint POST /transfers/:id/reserve implémenté et consommé par le frontend
+- Endpoint DELETE /transfers/:id/reservations/:reservationId implémenté et consommé par le frontend
+- Fonction `reserve()` implémentée côté frontend (`js/app.js`, lignes 44–65)
+- Fonction `cancelReservation()` implémentée côté frontend (`js/app.js`, lignes 67–86)
+- Boutons « Réserver » et « Annuler » affichés dynamiquement dans la liste de transferts (par conception : action directe par clic, sans formulaire séparé)
+- **LE FRONTEND CONSOMME ACTIVEMENT LES ENDPOINTS POST ET DELETE via boutons intégrés**
 
-**Preuve** :
-- Frontend : `index.html` ne contient aucun formulaire, bouton, ou champ input
-- Frontend : `js/app.js` n'a pas de fonction `reserve()` ou écoute d'événement
-- Workflow SHIAAAAAAAAAAAAAAAAAAAAAAAA-61 marque `Frontend réservation: TODO`
+**Preuves d'implémentation et de test** :
+- Code frontend : `js/app.js:44–65` (réservation) et `js/app.js:67–86` (annulation) contiennent les fonctions `reserve()` et `cancelReservation()` avec POST/DELETE, gestion d'erreur, stockage/suppression de `reservationId`, et rafraîchissement automatique
+- Code frontend : `js/app.js:51–61` crée dynamiquement les boutons « Réserver » et « Annuler » dans le rendu DOM
+- Couverture de tests : `js/app.test.js` contient 13 tests automatisés couvrant réservation, annulation, double-clic (SHIA-383) et transitions d'état
+- Workflows amont : `WORKFLOW_RESERVER_TRANSFERT.md` et `WORKFLOW_ANNULER_RESERVATION.md` décrivent l'implémentation end-to-end et les invariants clients
+- Audit fonctionnel : `FUNCTIONAL_AUDIT.md` §Fonctionnalités, points 2–3 confirment que réservation et annulation sont implémentées
 
-**Impact** :
-- Voyageur ne peut pas réserver depuis le web
-- Réservation possible via CLI/API directement (test), mais pas via produit
-- Écart entre annonce fonctionnelle et implémentation
+**Comportement observé en code** :
+- Voyageur clique sur « Réserver » pour un transfert avec `seatsLeft > 0` → POST `/transfers/{id}/reserve` avec `{ seats: 1 }` immédiat, stockage du `reservationId` retourné dans Map locale `reservations`, bouton basculé à « Annuler », rafraîchissement automatique de la liste via `loadTransfers()`
+- Voyageur clique sur « Annuler » pour un transfert réservé → DELETE `/transfers/{id}/reservations/{reservationId}` immédiat, suppression de `reservationId` de `reservations`, bouton basculé à « Réserver », rafraîchissement automatique
+- Une seule place par transfert et par session (limitation intentionnelle pour le pilote)
+- Protection anti double-clic : Set `pendingTransfers` verrouille chaque `transferId` pendant un appel réseau, rejette clics supplémentaires (SHIA-383)
 
 **Statut** :
-- Accepté pour pilote (MVP : consultation seule)
-- À lister comme évolution : SHIAAAAAAAAAAAAAAAAAAAAAAAA-XXX Ajouter formulaire réservation côté frontend
+- Fonctionnel et testé (SHIA-354 livré)
+- Design : boutons intégrés à la liste, pas de formulaire séparé (UX rapide)
 
 ### Risque 5 : Configuration d'URL API non versionnée (DÉPLOIEMENT)
 
 **Le problème** :
 - Frontend utilise `window.API_BASE_URL` injecté par la page hôte (fallback `http://localhost:3100`)
-- Mécanisme d'injection en production non versionné dans les dépôts
-- Dépendance tacite : serveur qui sert `index.html` doit injecter une `<script>` ou un template avant le chargement du JS
+- Mécanisme d'injection en production **INCONNU** — non versionné dans ce dépôt
+- Dépendance tacite : serveur qui sert `index.html` doit injecter une variable JavaScript avant le chargement du script
 
 **Preuve** :
-- Frontend (`js/app.js:1`) : `const API_BASE_URL = (typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100"`
+- Frontend (`js/app.js:2–3`) : `const API_BASE_URL = (typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100"`
 - Aucun build step, aucun env var, aucun fichier `.env` versionnés
-- Infrastructure : comment est injectée `window.API_BASE_URL` ? Réponse : inconnue
+- Infrastructure : comment est injectée `window.API_BASE_URL` en production ? Réponse : inconnue de ce dépôt
 
 **Impact** :
 - Développeur en local : URL OK (fallback localhost:3100)
 - Déploiement test/prod : si injection oubliée → frontend appelle localhost:3100 au lieu du serveur réel
 - Debugging difficile : erreur silencieuse (liste vide, aucun message réseau)
 
-**Recommandation** :
-- Documenter le mécanisme d'injection (ex. : `<script>window.API_BASE_URL="https://api.prod.example.com"</script>` avant `app.js`)
-- Ou migrer vers fichier `config.json` servi par le serveur
-- Ajouter un test d'intégration : vérifier que l'API correcte est interrogée en fonction de `window.API_BASE_URL`
+**Note** :
+- Mécanisme observable en code mais mécanisme d'injection externe non documenté — consulter documentation du workspace API ou de l'infrastructure
 
 ---
 
@@ -207,20 +213,22 @@ Transfer {
 
 2. **Authentification pour les réservations** (ARCHITECTURE)
    - Réservation actuellement anonyme (pas d'authentification API)
-   - Acceptable pour pilote ?
-   - Si non, où vit l'authentification : token JWT dans header, session cookie, autre ?
+   - Acceptable pour pilote et dans l'état actuel du projet
+   - Décision future : si authentification requise, où vivra-t-elle (token JWT, session cookie, autre) ?
 
-3. **Ajout formulaire réservation côté frontend** (SCOPE)
-   - À implémenter dans quelle itération (avant/après premier pilote) ?
-   - Formulaire simple (ID transfert + nombre places) ou multi-étape ?
+3. **Déploiement multi-domaine** (INFRASTRUCTURE)
+   - Comment sont déployés API et frontend en production : même origine ou séparés ?
+   - **Action requise** : vérifier que l'API expose les headers CORS (Risque 2 ci-dessus)
+   - Qui contrôle et valide les headers CORS en production ?
 
-4. **Déploiement multi-domaine** (INFRASTRUCTURE)
-   - Comment sont déployés API et frontend : même origine ou séparé ?
-   - Qui contrôle les headers CORS en production ?
-
-5. **Persistance des réservations** (FUTUR)
+4. **Persistance des réservations** (FUTUR)
    - Redémarrage API perd les réservations (acceptable pour pilote)
-   - Quand migrate-t-on vers une base de données ? Avant montée en charge ou après ?
+   - Quand migrer vers une base de données persistante ? Avant montée en charge ou après ?
+
+5. **Validation des données côté API** (INTÉGRATION)
+   - L'API valide-t-elle correctement `seats` (rejette négatif/zéro) ?
+   - L'API vérifie-t-elle que `seats <= seatsLeft` avant de confirmer la réservation ?
+   - Voir Risque 3 ci-dessus et documentation `shift-pilot-resa-api`
 
 ---
 

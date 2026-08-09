@@ -8,16 +8,17 @@ Structure technique, domaines → fichiers, points d'entrée critiques.
 shift-pilot-resa-web/
 ├── index.html              # Point d'entrée HTML
 ├── js/
-│   └── app.js             # Unique fichier de logique exécutable
+│   ├── app.js             # Unique fichier de logique exécutable (90 lignes)
+│   └── app.test.js        # Suite de 13 tests automatisés
 ├── README.md              # Documentation projet
-└── .git                   # Historique (un seul commit : init)
+└── .git                   # Historique de commits
 ```
 
-**Taille** : 3 fichiers versionnés utiles. Aucune dépendance externe, aucun build, aucun framework.
+**Taille** : 4 fichiers versionnés utiles (exécutable + tests). Aucune dépendance externe, aucun build, aucun framework. Historique : commits jusqu'à `acf9f61` incluant SHIA-354 (réservation/annulation), SHIA-383 (protection double-clic), SHIA-348 (gestion d'erreur).
 
 ## Domaines et fichiers
 
-### Domaine 1 — Consultation et réservation de transferts (`transferts-reservation`)
+### Domaine 1 — Consultation et réservation de transferts (`consultation-transferts`)
 
 **Catégorie** : métier (cœur du produit)  
 **Priorité** : Critique  
@@ -25,14 +26,14 @@ shift-pilot-resa-web/
 
 | Fichier | Rôle | Lignes utiles | Criticité |
 |---------|------|---|---|
-| `js/app.js` | Fonctions d'affichage (`loadTransfers`), de réservation (`reserve`), d'annulation (`cancelReservation`), état (`reservations` Map + `pendingTransfers` Set) | 6–86 | **CRITIQUE** — toute la logique métier du produit |
+| `js/app.js` | Fonctions d'affichage (`loadTransfers`), de réservation (`reserve`), d'annulation (`cancelReservation`), état (`reservations` Map + `pendingTransfers` Set) | 5–86 | **CRITIQUE** — toute la logique métier du produit |
 | `index.html` | Conteneur de rendu `<ul id="transfers-list">` | 9 | Haute — point d'ancrage du DOM |
 
 **Entrée** : événement `DOMContentLoaded` du navigateur, clics sur boutons « Réserver » / « Annuler »  
 **Sortie** : liste HTML de transferts avec boutons d'action, état des réservations  
 **Logique principale**
 ```javascript
-// js/app.js, lignes 10–42
+// js/app.js, lignes 10–68 (loadTransfers)
 export async function loadTransfers() {
   const list = document.getElementById("transfers-list");
   try {
@@ -69,7 +70,7 @@ export async function loadTransfers() {
 ```
 
 **Fonctions supplémentaires**
-- `reserve(transferId)` (lignes 44–65) : vérifie `reservations` et `pendingTransfers` avant d'agir, POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
+- `reserve(transferId)` (lignes 44–65) : vérifie `reservations` et `pendingTransfers` (protection double-clic SHIA-383) avant d'agir, POST vers `/transfers/{transferId}/reserve`, met à jour `reservations` Map, rafraîchit la liste
 - `cancelReservation(transferId, reservationId)` (lignes 67–86) : vérifie `pendingTransfers` avant d'agir, DELETE vers `/transfers/{transferId}/reservations/{reservationId}`, supprime de `reservations`, rafraîchit la liste
 
 **Points d'attention**
@@ -77,7 +78,7 @@ export async function loadTransfers() {
 - `pendingTransfers` (Set) verrouille chaque `transferId` pendant un appel réseau — protection anti double-clic (SHIA-383)
 - États clients `reservations` (Map) et `pendingTransfers` (Set) ne sont pas persistés — oubliés au rechargement de page
 - Pas de validation des champs `id`, `from`, `to`, `price`, `seatsLeft` — un absent → `undefined` affiché
-- Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert
+- Contrat implicite avec l'API : champ `id` requis et unique pour chaque transfert ; détails du comportement serveur (décrément de `seatsLeft` lors d'une réservation, persistance) sont **INCONNU** depuis ce dépôt
 - Affichage des erreurs remplace entièrement le contenu du conteneur `list` (invasif en cas de liste large)
 
 **Hotspot n°1** du dépôt : le champ `id` de chaque transfert doit exister et être stable — son absence ou mutation casse la gestion des réservations.
@@ -101,7 +102,7 @@ const API_BASE_URL =
 
 - **Mécanisme** : lecture de `window.API_BASE_URL` injectée par la page hôte, fallback vers `localhost:3100`
 - **En développement** : fallback automatique vers `localhost:3100` — aucune configuration manuelle requise
-- **En production** : nécessite une injection de `window.API_BASE_URL` par un mécanisme externe non versionné (probablement script serveur ou build)
+- **En production** : nécessite une injection de `window.API_BASE_URL` par un mécanisme externe (non versionné dans ce dépôt — **INCONNU**, probablement côté serveur HTTP, CI/CD ou build)
 
 **Appels réseau**
 ```javascript
@@ -123,9 +124,9 @@ const response = await fetch(
 ```
 
 - **Endpoints consommés** :
-  - `GET /transfers` : tableau JSON de transferts avec champs `id`, `from`, `to`, `price`, `seatsLeft`
-  - `POST /transfers/{transferId}/reserve` : réserve une place (body: `{ seats: 1 }`), réponse: JSON contenant `reservationId`
-  - `DELETE /transfers/{transferId}/reservations/{reservationId}` : annule une réservation
+  - `GET /transfers` : retourne tableau JSON de transferts. Champs observables (consommés par le frontend) : `id`, `from`, `to`, `price`, `seatsLeft`. D'autres champs peuvent être présents côté API mais ne sont pas consommés par ce frontend.
+  - `POST /transfers/{transferId}/reserve` : réserve une place. Requête : body JSON `{ seats: 1 }`. Réponse attendue par le frontend : JSON contenant le champ `reservationId` (utilisé pour l'annulation). Contrat distant exact et comportement serveur (décrément de `seatsLeft`, validation de `seats >= 1`, persistance) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`.
+  - `DELETE /transfers/{transferId}/reservations/{reservationId}` : annule une réservation. Réponse attendue par le frontend : statut 2xx (204 ou 200 avec corps vide). Comportement serveur (réaugmentation de `seatsLeft`) : **INCONNU depuis ce dépôt** — voir documentation `shift-pilot-resa-api`.
 - Pas d'authentification visible
 - Pas de header personnalisé au-delà de `Content-Type: application/json` pour POST
 - Pas de gestion du timeout
@@ -256,9 +257,9 @@ const API_BASE_URL =
   (typeof window !== "undefined" && window.API_BASE_URL) || "http://localhost:3100";
 ```
 
-**Risque** : mécanisme d'injection en production non versionné, comportement en prod non reproductible localement.
+**Risque** : le mécanisme d'injection de `window.API_BASE_URL` en production n'est pas documenté ni versionné dans ce dépôt. En développement, le fallback `http://localhost:3100` fonctionne ; en production, l'injection doit être effectuée par un layer externe (serveur HTTP, CI/CD, script HTML) et n'est pas vérifiable depuis ce code.
 
-**Priorité** : **Moyenne** — acceptable en pilote, critique en production si le mécanisme d'injection échoue.
+**Priorité** : **Moyenne** — acceptable en pilote avec configuration locale ; critique en production si l'injection externe échoue silencieusement.
 
 ## Chemins de données
 
@@ -314,4 +315,5 @@ Aucun état local n'est persisté — tout est jetable après rendu.
 
 - Tous les fichiers listés sont versionés et ont été lus en entier
 - Aucun fichier caché, aucun code généré, aucune boîte noire
-- `git log` : un seul commit : `init: pilote de test SHIFT/Paperclip`
+- `git log` : multiples commits et merges jusqu'à `acf9f61`, incluant SHIA-354 (réservation/annulation), SHIA-383 (protection double-clic), SHIA-348 (gestion d'erreur améliorée)
+- Tests : 13 tests automatisés dans `js/app.test.js` validant les workflows (affichage, réservation, annulation, double-clic, erreurs)
