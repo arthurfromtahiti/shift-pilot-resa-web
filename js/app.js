@@ -44,7 +44,6 @@ export async function loadTransfers() {
 export async function reserve(transferId) {
   if (reservations.has(transferId) || pendingTransfers.has(transferId)) return;
   pendingTransfers.add(transferId);
-  const errorEl = document.getElementById("transfers-error");
   try {
     const response = await fetch(`${API_BASE_URL}/transfers/${transferId}/reserve`, {
       method: "POST",
@@ -58,7 +57,7 @@ export async function reserve(transferId) {
     reservations.set(transferId, data.reservationId);
     await loadTransfers();
   } catch (err) {
-    errorEl.textContent = `Impossible de réserver : ${err.message}`;
+    document.getElementById("action-error").textContent = `Impossible de réserver : ${err.message}`;
   } finally {
     pendingTransfers.delete(transferId);
   }
@@ -67,7 +66,6 @@ export async function reserve(transferId) {
 export async function cancelReservation(transferId, reservationId) {
   if (pendingTransfers.has(transferId)) return;
   pendingTransfers.add(transferId);
-  const errorEl = document.getElementById("transfers-error");
   try {
     const response = await fetch(
       `${API_BASE_URL}/transfers/${transferId}/reservations/${reservationId}`,
@@ -79,7 +77,7 @@ export async function cancelReservation(transferId, reservationId) {
     reservations.delete(transferId);
     await loadTransfers();
   } catch (err) {
-    errorEl.textContent = `Impossible d'annuler : ${err.message}`;
+    document.getElementById("action-error").textContent = `Impossible d'annuler : ${err.message}`;
   } finally {
     pendingTransfers.delete(transferId);
   }
